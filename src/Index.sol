@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Upgradeable} from "@openzeppelin-upgradeable/contracts/token/ERC20/ERC20Upgradeable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {IIndex, Asset} from "./interfaces/IIndex.sol";
 
-contract Index is IIndex, ERC20 {
+contract Index is IIndex, ERC20Upgradeable {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
     EnumerableSet.AddressSet private _tokenSet;
 
-    constructor(string memory name, string memory symbol, Asset[] memory assets) ERC20(name, symbol) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(string calldata name, string calldata symbol, Asset[] calldata assets)
+        external
+        initializer
+    {
+        __ERC20_init(name, symbol);
         _initAssets(assets);
     }
 
