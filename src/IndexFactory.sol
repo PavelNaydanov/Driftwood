@@ -45,4 +45,8 @@ contract IndexFactory is IIndexFactory {
 
         emit IndexCreated(index, name, symbol);
     }
+
+    function getIndexImplementation() external view returns (address) {
+        return _indexImplementation;
+    }
 }

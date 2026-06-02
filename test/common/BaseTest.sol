@@ -7,6 +7,8 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import {Index, Asset} from "src/Index.sol";
+import {IndexFactory} from "src/IndexFactory.sol";
+
 import {MockERC20} from "test/mocks/MockERC20.sol";
 
 abstract contract BaseTest is Test {
@@ -15,9 +17,16 @@ abstract contract BaseTest is Test {
     address usdt;
     address weth;
 
+    function _deployIndexFactory() internal returns (IndexFactory createdIndexFactory) {
+        address indexImpl = address(new Index());
+        createdIndexFactory = new IndexFactory(indexImpl);
+
+        assertEq(createdIndexFactory.getIndexImplementation(), indexImpl, "Invalid index implementation");
+    }
+
     function _deployIndex() internal returns (Index createdIndex) {
-        address[] memory tokens = _deployTokens();
-        Asset[] memory assets = _getAssets(tokens);
+        address[] memory tokensToDeploy = _deployTokens();
+        Asset[] memory assets = _getAssets(tokensToDeploy);
 
         address indexImpl = address(new Index());
         createdIndex = Index(Clones.clone(indexImpl));
@@ -30,6 +39,15 @@ abstract contract BaseTest is Test {
         }
 
         createdIndex.initialize("Test Index", "TSTIDX", assets);
+
+        assertEq(createdIndex.name(), "Test Index");
+        assertEq(createdIndex.symbol(), "TSTIDX");
+
+        address[] memory tokens = createdIndex.getTokens();
+        for (uint256 i = 0; i < assets.length; i++) {
+            assertEq(tokens[i], assets[i].token, "Invalid token");
+            assertEq(IERC20(tokens[i]).balanceOf(address(createdIndex)), assets[i].amount, "Invalid asset amount");
+        }
     }
 
     function _deployTokens() internal returns (address[] memory tokens) {

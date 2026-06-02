@@ -11,21 +11,4 @@ contract IndexTest is BaseTest {
     function setUp() public {
         index = _deployIndex();
     }
-
-    // region - Deploy -
-
-    function test_deploy() external view {
-        assertEq(index.name(), "Test Index");
-        assertEq(index.symbol(), "TSTIDX");
-
-        Asset[] memory assets = _getAssets(index.getTokens());
-        address[] memory tokens = index.getTokens();
-
-        for (uint256 i = 0; i < assets.length; i++) {
-            assertEq(tokens[i], assets[i].token, "Invalid token");
-            assertEq(IERC20(tokens[i]).balanceOf(address(index)), assets[i].amount, "Invalid asset amount");
-        }
-    }
-
-    // endregion
 }

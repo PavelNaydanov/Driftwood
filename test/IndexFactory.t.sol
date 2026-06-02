@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.13;
+
+import {IndexFactory} from "src/IndexFactory.sol";
+import {BaseTest} from "./common/BaseTest.sol";
+
+contract IndexFactoryTest is BaseTest {
+    IndexFactory factory;
+
+    function setUp() public {
+        factory = _deployIndexFactory();
+    }
+}
