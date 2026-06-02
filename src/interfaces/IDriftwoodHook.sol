@@ -1,0 +1,3 @@
+interface IDriftwoodHook {
+    error ZeroAddress();
+}

@@ -2,10 +2,14 @@
 pragma solidity 0.8.35;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {IIndexFactory} from "./interfaces/IIndexFactory.sol";
 import {IIndex, Asset} from "./interfaces/IIndex.sol";
 
 contract IndexFactory is IIndexFactory {
+    using SafeERC20 for IERC20;
+
     address private _indexImplementation;
 
     constructor(address indexImplementation) {
@@ -22,6 +26,21 @@ contract IndexFactory is IIndexFactory {
         Asset[] calldata assets
     ) external returns (address index) {
         index = Clones.clone(_indexImplementation);
+
+        for (uint256 i = 0; i < assets.length; i++) {
+            Asset memory asset = assets[i];
+
+            if (asset.token == address(0)) {
+                revert ZeroAddress();
+            }
+
+            if (asset.amount == 0) {
+                revert ZeroAmount();
+            }
+
+            IERC20(asset.token).safeTransferFrom(msg.sender, index, asset.amount);
+        }
+
         IIndex(index).initialize(name, symbol, assets);
 
         emit IndexCreated(index, name, symbol);

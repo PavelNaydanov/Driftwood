@@ -101,7 +101,9 @@ contract Index is IIndex, ERC20Upgradeable {
 
             _tokenSet.add(asset.token);
 
-            SafeERC20.safeTransferFrom(IERC20(asset.token), msg.sender, address(this), asset.amount);
+            if (IERC20(asset.token).balanceOf(address(this)) != asset.amount) {
+                revert InvalidAssetAmount(asset.token, asset.amount);
+            }
         }
     }
 

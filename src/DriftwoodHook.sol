@@ -14,12 +14,15 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
 import {CurrencySettler} from "@openzeppelin/uniswap-hooks/src/utils/CurrencySettler.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract DriftwoodHook is BaseHook {
+import {IDriftwoodHook} from "./interfaces/IDriftwoodHook.sol";
+
+contract DriftwoodHook is IDriftwoodHook, BaseHook {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
+    using SafeERC20 for IERC20;
 
     struct ActivePosition {
         int24 tickLower;
@@ -27,9 +30,17 @@ contract DriftwoodHook is BaseHook {
         uint128 liquidity;
     }
 
+    address private _index;
+
     mapping(PoolId => ActivePosition) private _activePositions;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    constructor(IPoolManager _poolManager, address index) BaseHook(_poolManager) {
+        if (index == address(0)) {
+            revert ZeroAddress();
+        }
+
+        _index = index;
+    }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
@@ -82,13 +93,18 @@ contract DriftwoodHook is BaseHook {
         int24 tickLower = TickBitmap.compress(currentTick, tickSpacing) * tickSpacing;
         int24 tickUpper = tickLower + tickSpacing;
 
-        // TODO: get assets from index
+        address token0 = Currency.unwrap(key.currency0);
+        address token1 = Currency.unwrap(key.currency1);
 
-        // Get balances held by hook
-        uint256 balance0 = IERC20(Currency.unwrap(key.currency0)).balanceOf(address(this));
-        uint256 balance1 = IERC20(Currency.unwrap(key.currency1)).balanceOf(address(this));
+        // Get balances held by index
+        uint256 balance0 = IERC20(token0).balanceOf(_index);
+        uint256 balance1 = IERC20(token1).balanceOf(_index);
 
         if (balance0 == 0 && balance1 == 0) return;
+
+        // Get assets from index
+        IERC20(token0).safeTransferFrom(_index, address(this), balance0);
+        IERC20(token1).safeTransferFrom(_index, address(this), balance1);
 
         // Calculate max liquidity from available balances
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -150,7 +166,15 @@ contract DriftwoodHook is BaseHook {
         // Clear active position
         delete _activePositions[poolId];
 
-        // TODO: sent assets back to index
+        address token0 = Currency.unwrap(key.currency0);
+        address token1 = Currency.unwrap(key.currency1);
+
+        // Get balances held by hook
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+
+        IERC20(token0).safeTransfer(_index, balance0);
+        IERC20(token1).safeTransfer(_index, balance1);
     }
 
     /// @dev Settle a negative delta (transfer tokens to pool manager)
