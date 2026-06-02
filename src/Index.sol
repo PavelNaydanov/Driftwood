@@ -82,6 +82,10 @@ contract Index is IIndex, ERC20Upgradeable {
         }
     }
 
+    function getTokens() external view returns (address[] memory) {
+        return _tokenSet.values();
+    }
+
     function _initAssets(Asset[] memory assets) private {
         uint256 numberOfAssets = assets.length;
         if (numberOfAssets < 2) {
