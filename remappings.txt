@@ -4,3 +4,5 @@
 
 @uniswap/v4-core/=lib/uniswap-hooks/lib/v4-core/
 @uniswap/v4-periphery/=lib/uniswap-hooks/lib/v4-periphery/
+
+hookmate/=lib/hookmate/src/
