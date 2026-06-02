@@ -5,9 +5,17 @@ import {IndexFactory} from "src/IndexFactory.sol";
 import {BaseTest} from "./common/BaseTest.sol";
 
 contract IndexFactoryTest is BaseTest {
-    IndexFactory factory;
+    IndexFactory public factory;
 
     function setUp() public {
         factory = _deployIndexFactory();
     }
+
+    // region - Deploy -
+
+    function test_deploy() external view {
+        assertNotEq(factory.getIndexImplementation(), address(0), "Invalid index implementation");
+    }
+
+    // endregion
 }

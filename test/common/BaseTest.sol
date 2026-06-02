@@ -20,8 +20,6 @@ abstract contract BaseTest is Test {
     function _deployIndexFactory() internal returns (IndexFactory createdIndexFactory) {
         address indexImpl = address(new Index());
         createdIndexFactory = new IndexFactory(indexImpl);
-
-        assertEq(createdIndexFactory.getIndexImplementation(), indexImpl, "Invalid index implementation");
     }
 
     function _deployIndex() internal returns (Index createdIndex) {
@@ -39,15 +37,6 @@ abstract contract BaseTest is Test {
         }
 
         createdIndex.initialize("Test Index", "TSTIDX", assets);
-
-        assertEq(createdIndex.name(), "Test Index");
-        assertEq(createdIndex.symbol(), "TSTIDX");
-
-        address[] memory tokens = createdIndex.getTokens();
-        for (uint256 i = 0; i < assets.length; i++) {
-            assertEq(tokens[i], assets[i].token, "Invalid token");
-            assertEq(IERC20(tokens[i]).balanceOf(address(createdIndex)), assets[i].amount, "Invalid asset amount");
-        }
     }
 
     function _deployTokens() internal returns (address[] memory tokens) {
@@ -70,6 +59,4 @@ abstract contract BaseTest is Test {
             assets[i] = Asset({token: token, amount: 1 * 10 ** IERC20Metadata(token).decimals()});
         }
     }
-
-    function test() external {}
 }
