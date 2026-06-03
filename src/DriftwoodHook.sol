@@ -103,6 +103,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         if (balance0 == 0 && balance1 == 0) return;
 
         // Get assets from index
+        // TODO: call index for getting the amounts
         IERC20(token0).safeTransferFrom(_index, address(this), balance0);
         IERC20(token1).safeTransferFrom(_index, address(this), balance1);
 

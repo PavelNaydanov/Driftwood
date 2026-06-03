@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {IndexFactory} from "src/IndexFactory.sol";
-import {BaseTest} from "./common/BaseTest.sol";
+import {BaseTest} from "./utils/BaseTest.sol";
 
 contract IndexFactoryTest is BaseTest {
     IndexFactory public factory;
