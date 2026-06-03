@@ -4,7 +4,6 @@ pragma solidity ^0.8.13;
 import {Test} from "forge-std/Test.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -13,7 +12,7 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Constants} from "@uniswap/v4-core/test/utils/Constants.sol";
 
-import {Index, Asset} from "src/Index.sol";
+import {Index, AssetConfig, Asset} from "src/Index.sol";
 import {IndexFactory} from "src/IndexFactory.sol";
 import {DriftwoodHook} from "src/DriftwoodHook.sol";
 
@@ -21,6 +20,9 @@ import {MockERC20} from "test/mocks/MockERC20.sol";
 import {UniswapDeployers} from "./UniswapDeployers.sol";
 
 abstract contract BaseTest is Test, UniswapDeployers {
+    address constant public USDT_DATA_FEED = 0x3E7d1eAB13ad0104d2750B8863b489D65364e32D;
+    address constant public ETH_DATA_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
+
     using SafeERC20 for IERC20;
     using CurrencyLibrary for Currency;
     using PoolIdLibrary for PoolKey;
@@ -79,14 +81,15 @@ abstract contract BaseTest is Test, UniswapDeployers {
     }
 
     function _deployIndex(address defaultAdmin) internal returns (Index createdIndex) {
-        address[] memory tokensToDeploy = _deployTokens();
-        Asset[] memory assets = _getAssets(tokensToDeploy);
+        _deployTokens();
+
+        AssetConfig[] memory assets = _getAssets();
 
         address indexImpl = address(new Index());
         createdIndex = Index(Clones.clone(indexImpl));
 
         for (uint256 i = 0; i < assets.length; i++) {
-            Asset memory asset = assets[i];
+            AssetConfig memory asset = assets[i];
             deal(asset.token, address(this), asset.amount);
 
             IERC20(asset.token).safeTransfer(address(createdIndex), asset.amount);
@@ -104,16 +107,19 @@ abstract contract BaseTest is Test, UniswapDeployers {
         tokens[1] = weth;
     }
 
-    function _getAssets(address[] memory tokens) internal view returns (Asset[] memory assets) {
-        uint256 numberOfTokens = tokens.length;
+    function _getAssets() internal view returns (AssetConfig[] memory assets) {
+        assets = new AssetConfig[](2);
+        assets[0] = AssetConfig({
+            token: usdt,
+            dataFeed: USDT_DATA_FEED,
+            amount: 1_000_0000e6
+        });
 
-        assets = new Asset[](numberOfTokens);
-
-        for (uint256 i = 0; i < numberOfTokens; i++) {
-            address token = tokens[i];
-
-            assets[i] = Asset({token: token, amount: 1 * 10 ** IERC20Metadata(token).decimals()});
-        }
+        assets[1] = AssetConfig({
+            token: weth,
+            dataFeed: ETH_DATA_FEED,
+            amount: 1_000_0000e18
+        });
     }
 
     function _etch(address target, bytes memory bytecode) internal override {

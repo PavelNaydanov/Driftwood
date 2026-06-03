@@ -5,7 +5,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IIndexFactory} from "./interfaces/IIndexFactory.sol";
-import {IIndex, Asset} from "./interfaces/IIndex.sol";
+import {IIndex, AssetConfig} from "./interfaces/IIndex.sol";
 
 contract IndexFactory is IIndexFactory {
     using SafeERC20 for IERC20;
@@ -23,13 +23,13 @@ contract IndexFactory is IIndexFactory {
     function createIndex(
         string calldata name,
         string calldata symbol,
-        Asset[] calldata assets,
+        AssetConfig[] calldata assets,
         address defaultAdmin
     ) external returns (address index) {
         index = Clones.clone(_indexImplementation);
 
         for (uint256 i = 0; i < assets.length; i++) {
-            Asset memory asset = assets[i];
+            AssetConfig memory asset = assets[i];
 
             if (asset.token == address(0)) {
                 revert ZeroAddress();

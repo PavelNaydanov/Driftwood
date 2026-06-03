@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
+struct AssetConfig {
+    address token;
+    uint256 amount;
+    address dataFeed;
+}
+
 struct Asset {
     address token;
     uint256 amount;
@@ -22,7 +28,7 @@ interface IIndex {
     error OutstandingDebt(address hook, address token, uint256 amount);
     error InsufficientCollectAmount(address token, uint256 amount);
 
-    function initialize(string calldata name, string calldata symbol, Asset[] calldata assets, address defaultAdmin) external;
+    function initialize(string calldata name, string calldata symbol, AssetConfig[] calldata assets, address defaultAdmin) external;
     function lendAsset(address token, uint256 amount) external;
     function collectAsset(address token) external;
 }

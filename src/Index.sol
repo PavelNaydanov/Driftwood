@@ -7,7 +7,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
-import {IIndex, Asset} from "./interfaces/IIndex.sol";
+import {IIndex, AssetConfig, Asset} from "./interfaces/IIndex.sol";
+import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 
 contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     using SafeERC20 for IERC20;
@@ -15,15 +16,21 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     bytes32 public constant HOOK_ROLE = keccak256("HOOK_ROLE");
 
-    mapping(address token => uint256 amount) private _balanceBeforeLend;
     EnumerableSet.AddressSet private _tokenSet;
+    mapping(address token => address dataFeed) private _dataFeeds;
+    mapping(address token => uint256 amount) private _balanceBeforeLend;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(string calldata name, string calldata symbol, Asset[] calldata assets, address defaultAdmin)
+    function initialize(
+        string calldata name,
+        string calldata symbol,
+        AssetConfig[] calldata assets,
+        address defaultAdmin
+    )
         external
         initializer
     {
@@ -132,16 +139,20 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return _tokenSet.values();
     }
 
-    function _initAssets(Asset[] memory assets) private {
+    function getDataFeed(address token) external view returns (address) {
+        return _dataFeeds[token];
+    }
+
+    function _initAssets(AssetConfig[] memory assets) private {
         uint256 numberOfAssets = assets.length;
         if (numberOfAssets < 2) {
             revert InvalidNumberOfAssets();
         }
 
         for (uint256 i = 0; i < numberOfAssets; i++) {
-            Asset memory asset = assets[i];
+            AssetConfig memory asset = assets[i];
 
-            if (asset.token == address(0)) {
+            if (asset.token == address(0) || asset.dataFeed == address(0)) {
                 revert ZeroAddress();
             }
 
@@ -150,6 +161,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             }
 
             _tokenSet.add(asset.token);
+            _dataFeeds[asset.token] = asset.dataFeed;
 
             if (IERC20(asset.token).balanceOf(address(this)) != asset.amount) {
                 revert InvalidAssetAmount(asset.token, asset.amount);
