@@ -8,8 +8,11 @@ import {BaseTest} from "./utils/BaseTest.sol";
 contract IndexTest is BaseTest {
     Index public index;
 
+    address defaultAdmin;
+
     function setUp() public {
-        index = _deployIndex();
+        defaultAdmin = makeAddr("defaultAdmin");
+        index = _deployIndex(defaultAdmin);
     }
 
     // region - Deploy -

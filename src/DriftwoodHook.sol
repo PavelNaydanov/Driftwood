@@ -17,6 +17,7 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IDriftwoodHook} from "./interfaces/IDriftwoodHook.sol";
+import {IIndex} from "./interfaces/IIndex.sol";
 
 contract DriftwoodHook is IDriftwoodHook, BaseHook {
     using PoolIdLibrary for PoolKey;
@@ -103,9 +104,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         if (balance0 == 0 && balance1 == 0) return;
 
         // Get assets from index
-        // TODO: call index for getting the amounts
-        IERC20(token0).safeTransferFrom(_index, address(this), balance0);
-        IERC20(token1).safeTransferFrom(_index, address(this), balance1);
+        IIndex(_index).lendAsset(token0, balance0);
+        IIndex(_index).lendAsset(token1, balance1);
 
         // Calculate max liquidity from available balances
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -176,6 +176,9 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
         IERC20(token0).safeTransfer(_index, balance0);
         IERC20(token1).safeTransfer(_index, balance1);
+
+        IIndex(_index).collectAsset(token0);
+        IIndex(_index).collectAsset(token1);
     }
 
     /// @dev Settle a negative delta (transfer tokens to pool manager)

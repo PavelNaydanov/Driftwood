@@ -5,13 +5,17 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
 import {IIndex, Asset} from "./interfaces/IIndex.sol";
 
-contract Index is IIndex, ERC20Upgradeable {
+contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    bytes32 public constant HOOK_ROLE = keccak256("HOOK_ROLE");
+
+    mapping(address token => uint256 amount) private _balanceBeforeLend;
     EnumerableSet.AddressSet private _tokenSet;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -19,12 +23,15 @@ contract Index is IIndex, ERC20Upgradeable {
         _disableInitializers();
     }
 
-    function initialize(string calldata name, string calldata symbol, Asset[] calldata assets)
+    function initialize(string calldata name, string calldata symbol, Asset[] calldata assets, address defaultAdmin)
         external
         initializer
     {
         __ERC20_init(name, symbol);
+        __AccessControl_init();
+
         _initAssets(assets);
+        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
 
     function mint(uint256 shares, address receiver) external {
@@ -80,6 +87,45 @@ contract Index is IIndex, ERC20Upgradeable {
                 SafeERC20.safeTransfer(IERC20(asset.token), receiver, asset.amount);
             }
         }
+    }
+
+    function lendAsset(address token, uint256 amount) external onlyRole(HOOK_ROLE) {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        if (token == address(0)) {
+            revert ZeroAddress();
+        }
+
+        if (!_tokenSet.contains(token)) {
+            revert InvalidAsset(token);
+        }
+
+        if (IERC20(token).balanceOf(address(this)) < amount) {
+            revert InsufficientAssetBalance(token, amount);
+        }
+
+        if (_balanceBeforeLend[token] > 0) {
+            revert OutstandingDebt(msg.sender, token, _balanceBeforeLend[token]);
+        }
+
+        _balanceBeforeLend[token] = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(msg.sender, amount);
+
+        emit AssetLent(msg.sender, token, amount);
+    }
+
+    function collectAsset(address token) external onlyRole(HOOK_ROLE) {
+        uint256 balanceBeforeLend = _balanceBeforeLend[token];
+        if (IERC20(token).balanceOf(address(this)) < balanceBeforeLend) {
+            revert InsufficientCollectAmount(token, balanceBeforeLend);
+        }
+
+        uint256 collectedAmount = IERC20(token).balanceOf(address(this)) - balanceBeforeLend;
+        delete _balanceBeforeLend[token];
+
+        emit AssetCollected(msg.sender, token, collectedAmount);
     }
 
     function getTokens() external view returns (address[] memory) {

@@ -28,9 +28,9 @@ abstract contract BaseTest is Test, UniswapDeployers {
     address usdt;
     address weth;
 
-    function _deployDriftwoodHook() internal returns (DriftwoodHook createdHook, Index createdIndex, PoolKey memory poolKey) {
+    function _deployDriftwoodHook(address defaultAdmin) internal returns (DriftwoodHook createdHook, Index createdIndex, PoolKey memory poolKey) {
         _deployUniswapArtifactsAndLabel();
-        createdIndex = _deployIndex();
+        createdIndex = _deployIndex(defaultAdmin);
 
         Currency currency0;
         Currency currency1;
@@ -57,6 +57,11 @@ abstract contract BaseTest is Test, UniswapDeployers {
         });
         PoolId poolId = poolKey.toId();
         poolManager.initialize(poolKey, Constants.SQRT_PRICE_1_1);
+
+        bytes32 hookRole = createdIndex.HOOK_ROLE();
+
+        vm.prank(defaultAdmin);
+        createdIndex.grantRole(hookRole, address(createdHook));
     }
 
     function _deployUniswapArtifactsAndLabel() internal {
@@ -73,7 +78,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
         createdIndexFactory = new IndexFactory(indexImpl);
     }
 
-    function _deployIndex() internal returns (Index createdIndex) {
+    function _deployIndex(address defaultAdmin) internal returns (Index createdIndex) {
         address[] memory tokensToDeploy = _deployTokens();
         Asset[] memory assets = _getAssets(tokensToDeploy);
 
@@ -87,7 +92,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
             IERC20(asset.token).safeTransfer(address(createdIndex), asset.amount);
         }
 
-        createdIndex.initialize("Test Index", "TSTIDX", assets);
+        createdIndex.initialize("Test Index", "TSTIDX", assets, defaultAdmin);
     }
 
     function _deployTokens() internal returns (address[] memory tokens) {

@@ -15,8 +15,11 @@ contract DriftwoodHookTest is BaseTest {
     Index public index;
     PoolKey public poolKey;
 
+    address defaultAdmin;
+
     function setUp() public {
-        (hook, index, poolKey) = _deployDriftwoodHook();
+        defaultAdmin = makeAddr("defaultAdmin");
+        (hook, index, poolKey) = _deployDriftwoodHook(defaultAdmin);
 
         vm.label(address(hook), "DriftwoodHook");
         vm.label(address(index), "Index");
