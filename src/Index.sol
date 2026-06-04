@@ -6,6 +6,7 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import {IIndex, AssetConfig, Asset} from "./interfaces/IIndex.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
@@ -14,10 +15,14 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    uint16 constant public MAX_BPS = 10_000;
     bytes32 public constant HOOK_ROLE = keccak256("HOOK_ROLE");
 
     EnumerableSet.AddressSet private _tokenSet;
     mapping(address token => address dataFeed) private _dataFeeds;
+    mapping(address token => uint16 targetWeightBps) private _targetWeightBps;
+    mapping(address token => uint16 toleranceBps) private _toleranceBps;
+    mapping(address token => uint64 maxPriceStaleness) private _maxPriceStaleness;
     mapping(address token => uint256 amount) private _balanceBeforeLend;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -149,6 +154,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             revert InvalidNumberOfAssets();
         }
 
+        uint256 totalWeightBps;
         for (uint256 i = 0; i < numberOfAssets; i++) {
             AssetConfig memory asset = assets[i];
 
@@ -160,12 +166,33 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
                 revert ZeroAmount();
             }
 
+            if (asset.targetWeightBps == 0 || asset.targetWeightBps > MAX_BPS) {
+                revert InvalidWeightBps(asset.token);
+            }
+
+            if (asset.toleranceBps >= asset.targetWeightBps) {
+                revert InvalidToleranceBps(asset.token);
+            }
+
+            if (asset.maxPriceStaleness == 0) {
+                revert InvalidMaxPriceStaleness(asset.token);
+            }
+
+            totalWeightBps += asset.targetWeightBps;
+
             _tokenSet.add(asset.token);
             _dataFeeds[asset.token] = asset.dataFeed;
+            _targetWeightBps[asset.token] = asset.targetWeightBps;
+            _toleranceBps[asset.token] = asset.toleranceBps;
+            _maxPriceStaleness[asset.token] = asset.maxPriceStaleness;
 
             if (IERC20(asset.token).balanceOf(address(this)) != asset.amount) {
                 revert InvalidAssetAmount(asset.token, asset.amount);
             }
+        }
+
+        if (totalWeightBps != MAX_BPS) {
+            revert InvalidTotalWeightBps();
         }
     }
 
@@ -173,8 +200,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         private
         view
         returns (Asset[] memory assets)
-{
-        uint256 numberOfAssets = _tokenSet.values().length;
+    {
+        uint256 numberOfAssets = _tokenSet.length();
         assets = new Asset[](numberOfAssets);
 
         for (uint256 i = 0; i < numberOfAssets; i++) {
@@ -185,5 +212,101 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
                 amount: Math.mulDiv(shares, IERC20(token).balanceOf(address(this)), totalSupply(), rounding)
             });
         }
+    }
+
+    function previewBoundsCheck(
+        address token0,
+        uint256 newBalance0,
+        address token1,
+        uint256 newBalance1
+    ) external view returns (bool) {
+        if (token0 == token1) {
+            revert InvalidAssets();
+        }
+
+        if (!_tokenSet.contains(token0)) {
+            revert InvalidAsset(token0);
+        }
+
+        if (!_tokenSet.contains(token1)) {
+            revert InvalidAsset(token1);
+        }
+
+        uint256 numberOfTokens = _tokenSet.length();
+        uint256[] memory values = new uint256[](numberOfTokens);
+        uint256 total;
+
+        for (uint256 i = 0; i < numberOfTokens; i++) {
+            address token = _tokenSet.at(i);
+
+            uint256 balance;
+            if (token == token0) {
+                balance = newBalance0;
+            } else if (token == token1) {
+                balance = newBalance1;
+            } else {
+                balance = IERC20(token).balanceOf(address(this));
+            }
+
+            uint256 value = _snapshotUsdValue(token, balance);
+
+            values[i] = value;
+            total += value;
+        }
+
+        if (total == 0) {
+            return false;
+        }
+
+        for (uint256 i = 0; i < numberOfTokens; i++) {
+            address token = _tokenSet.at(i);
+
+            uint256 actualBps = Math.mulDiv(values[i], MAX_BPS, total);
+            uint16 targetBps = _targetWeightBps[token];
+            uint16 toleranceBps = _toleranceBps[token];
+
+            uint256 diff = actualBps > targetBps
+                ? actualBps - targetBps
+                : targetBps - actualBps;
+
+            if (diff > toleranceBps) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function _snapshotUsdValue(address token, uint256 balance) private view returns (uint256 value) {
+        uint256 priceInUsd = _readPriceInUsd(token);
+
+        uint256 tokenUnit = 10 ** IERC20Metadata(token).decimals();
+        value = Math.mulDiv(balance, priceInUsd, tokenUnit);
+    }
+
+    function _readPriceInUsd(address token) private view returns (uint256) {
+        address dataFeed = _dataFeeds[token];
+
+        uint8 feedDecimals = AggregatorV3Interface(dataFeed).decimals();
+        (, int256 answer, , uint256 updatedAt,) =
+            AggregatorV3Interface(dataFeed).latestRoundData();
+
+        if (answer <= 0) {
+            revert InvalidPrice(token);
+        }
+
+        if (block.timestamp - updatedAt > _maxPriceStaleness[token]) {
+            revert StalePrice(token);
+        }
+
+        uint256 price = uint256(answer);
+
+        if (feedDecimals < 18) {
+            return price * (10 ** (18 - feedDecimals));
+        } else if (feedDecimals > 18) {
+            return price / (10 ** (feedDecimals - 18));
+        }
+
+        return price;
     }
 }
