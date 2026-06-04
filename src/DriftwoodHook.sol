@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
+import {console} from "forge-std/Test.sol"; // TODO: remove
 import {BaseHook} from "@openzeppelin/uniswap-hooks/src/base/BaseHook.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IPoolManager, SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -94,6 +95,15 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 
+        // Ensure the pool will physically have enough balance to settle our take
+        // in afterSwap. At take time the pool holds (poolBalance + balance_i), since
+        // hook deposits balance_i in beforeSwap and trader input is not yet settled.
+        // Hook take amount equals (hookFinal_i - excess_i), which after cancelling
+        // excess gives the simplified inequality below.
+        if (!_poolHasCapacityForTake(token0, token1, balance0, balance1, hookFinal0, hookFinal1)) {
+            return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
+
         if (IIndex(_index).previewBoundsCheck(token0, hookFinal0, token1, hookFinal1)) {
             _addLiquidity(key, context, balance0, balance1);
         }
@@ -108,7 +118,11 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, int128) {
-        _removeLiquidity(key);
+        ActivePosition memory pos = _activePositions[key.toId()];
+        if (pos.liquidity > 0) {
+            _removeLiquidity(key, pos);
+        }
+
         return (BaseHook.afterSwap.selector, 0);
     }
 
@@ -162,6 +176,19 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         context.excess0 = balance0 - deposit0;
         context.excess1 = balance1 - deposit1;
         context.totalLiquidity = poolLiquidity + context.hookLiquidity;
+    }
+
+    function _poolHasCapacityForTake(
+        address token0,
+        address token1,
+        uint256 balance0,
+        uint256 balance1,
+        uint256 hookFinal0,
+        uint256 hookFinal1
+    ) private view returns (bool) {
+        uint256 available0 = IERC20(token0).balanceOf(address(poolManager)) + balance0;
+        uint256 available1 = IERC20(token1).balanceOf(address(poolManager)) + balance1;
+        return hookFinal0 <= available0 && hookFinal1 <= available1;
     }
 
     function _simulateHookBalances(SimulationContext memory context, uint24 fee, SwapParams calldata params)
@@ -231,12 +258,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         });
     }
 
-    function _removeLiquidity(PoolKey calldata key) private {
-        PoolId poolId = key.toId();
-        ActivePosition memory pos = _activePositions[poolId];
-
-        if (pos.liquidity == 0) return;
-
+    function _removeLiquidity(PoolKey calldata key, ActivePosition memory pos) private {
         // Remove liquidity from the pool
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             key,
@@ -249,12 +271,15 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             ""
         );
 
+        console.log("DeltaAmount0: ", delta.amount0());
+        console.log("DeltaAmount1: ", delta.amount1());
+
         // Take back the tokens (principal + fees)
         _take(key.currency0, delta.amount0());
         _take(key.currency1, delta.amount1());
 
         // Clear active position
-        delete _activePositions[poolId];
+        delete _activePositions[key.toId()];
 
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
