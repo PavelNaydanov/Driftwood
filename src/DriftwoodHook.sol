@@ -12,9 +12,12 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
+import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {CurrencySettler} from "@openzeppelin/uniswap-hooks/src/utils/CurrencySettler.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IDriftwoodHook} from "./interfaces/IDriftwoodHook.sol";
 import {IIndex} from "./interfaces/IIndex.sol";
@@ -29,6 +32,16 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         int24 tickLower;
         int24 tickUpper;
         uint128 liquidity;
+    }
+
+    struct SimulationContext {
+        uint160 sqrtPriceX96;
+        uint160 sqrtPriceLowerX96;
+        uint160 sqrtPriceUpperX96;
+        uint128 hookLiquidity;
+        uint128 totalLiquidity;
+        uint256 excess0;
+        uint256 excess1;
     }
 
     address private _index;
@@ -65,10 +78,18 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     function _beforeSwap(
         address,
         PoolKey calldata key,
-        SwapParams calldata,
+        SwapParams calldata params,
         bytes calldata
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
-        _addLiquidity(key);
+        (uint256 hookFinal0, uint256 hookFinal1) = _simulateHookBalances(key, params);
+
+        address token0 = Currency.unwrap(key.currency0);
+        address token1 = Currency.unwrap(key.currency1);
+
+        if (IIndex(_index).previewBoundsCheck(token0, hookFinal0, token1, hookFinal1)) {
+            _addLiquidity(key);
+        }
+
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -81,6 +102,91 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     ) internal override returns (bytes4, int128) {
         _removeLiquidity(key);
         return (BaseHook.afterSwap.selector, 0);
+    }
+
+    function _simulateHookBalances(PoolKey calldata key, SwapParams calldata params)
+        private
+        view
+        returns (uint256 hookFinal0, uint256 hookFinal1)
+    {
+        (SimulationContext memory context, uint256 balance0, uint256 balance1) = _prepareSimulation(key);
+
+        if (context.hookLiquidity == 0) {
+            return (balance0, balance1);
+        }
+
+        return _finalizeHookBalances(context, key.fee, params);
+    }
+
+    function _prepareSimulation(PoolKey calldata key)
+        private
+        view
+        returns (SimulationContext memory context, uint256 balance0, uint256 balance1)
+    {
+        PoolId poolId = key.toId();
+        int24 currentTick;
+        (context.sqrtPriceX96, currentTick,,) = poolManager.getSlot0(poolId);
+        uint128 poolLiquidity = poolManager.getLiquidity(poolId);
+
+        int24 tickLower = TickBitmap.compress(currentTick, key.tickSpacing) * key.tickSpacing;
+        context.sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(tickLower);
+        context.sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing);
+
+        balance0 = IERC20(Currency.unwrap(key.currency0)).balanceOf(_index);
+        balance1 = IERC20(Currency.unwrap(key.currency1)).balanceOf(_index);
+
+        context.hookLiquidity = LiquidityAmounts.getLiquidityForAmounts(
+            context.sqrtPriceX96,
+            context.sqrtPriceLowerX96,
+            context.sqrtPriceUpperX96,
+            balance0,
+            balance1
+        );
+
+        if (context.hookLiquidity == 0) {
+            return (context, balance0, balance1);
+        }
+
+        (uint256 deposit0, uint256 deposit1) = _getAmountsForLiquidity(
+            context.sqrtPriceX96,
+            context.sqrtPriceLowerX96,
+            context.sqrtPriceUpperX96,
+            context.hookLiquidity
+        );
+
+        context.excess0 = balance0 - deposit0;
+        context.excess1 = balance1 - deposit1;
+        context.totalLiquidity = poolLiquidity + context.hookLiquidity;
+    }
+
+    function _finalizeHookBalances(SimulationContext memory context, uint24 fee, SwapParams calldata params)
+        private
+        pure
+        returns (uint256 hookFinal0, uint256 hookFinal1)
+    {
+        uint160 sqrtPriceTargetX96 = params.zeroForOne
+            ? (params.sqrtPriceLimitX96 > context.sqrtPriceLowerX96 ? params.sqrtPriceLimitX96 : context.sqrtPriceLowerX96)
+            : (params.sqrtPriceLimitX96 < context.sqrtPriceUpperX96 ? params.sqrtPriceLimitX96 : context.sqrtPriceUpperX96);
+
+        (uint160 sqrtPriceNextX96,,, uint256 feeAmount) = SwapMath.computeSwapStep(
+            context.sqrtPriceX96,
+            sqrtPriceTargetX96,
+            context.totalLiquidity,
+            params.amountSpecified,
+            fee
+        );
+
+        (uint256 withdraw0, uint256 withdraw1) = _getAmountsForLiquidity(
+            sqrtPriceNextX96,
+            context.sqrtPriceLowerX96,
+            context.sqrtPriceUpperX96,
+            context.hookLiquidity
+        );
+
+        uint256 hookFeeShare = Math.mulDiv(feeAmount, context.hookLiquidity, context.totalLiquidity);
+
+        hookFinal0 = context.excess0 + withdraw0 + (params.zeroForOne ? hookFeeShare : 0);
+        hookFinal1 = context.excess1 + withdraw1 + (params.zeroForOne ? 0 : hookFeeShare);
     }
 
     function _addLiquidity(PoolKey calldata key) private {
@@ -179,6 +285,23 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
         IIndex(_index).collectAsset(token0);
         IIndex(_index).collectAsset(token1);
+    }
+
+    /// @dev Mirrors v4-core LiquidityAmounts.getAmountsForLiquidity (not exported in periphery).
+    function _getAmountsForLiquidity(
+        uint160 sqrtPriceX96,
+        uint160 sqrtPriceLowerX96,
+        uint160 sqrtPriceUpperX96,
+        uint128 liquidity
+    ) private pure returns (uint256 amount0, uint256 amount1) {
+        if (sqrtPriceX96 <= sqrtPriceLowerX96) {
+            amount0 = SqrtPriceMath.getAmount0Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, false);
+        } else if (sqrtPriceX96 < sqrtPriceUpperX96) {
+            amount0 = SqrtPriceMath.getAmount0Delta(sqrtPriceX96, sqrtPriceUpperX96, liquidity, false);
+            amount1 = SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceX96, liquidity, false);
+        } else {
+            amount1 = SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, false);
+        }
     }
 
     /// @dev Settle a negative delta (transfer tokens to pool manager)
