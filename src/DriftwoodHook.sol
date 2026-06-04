@@ -35,6 +35,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     }
 
     struct SimulationContext {
+        int24 tickLower;
+        int24 tickUpper;
         uint160 sqrtPriceX96;
         uint160 sqrtPriceLowerX96;
         uint160 sqrtPriceUpperX96;
@@ -81,13 +83,19 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         SwapParams calldata params,
         bytes calldata
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
-        (uint256 hookFinal0, uint256 hookFinal1) = _simulateHookBalances(key, params);
+        (SimulationContext memory context, uint256 balance0, uint256 balance1) = _prepareSimulation(key, params);
+
+        if (context.hookLiquidity == 0) {
+            return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
+
+        (uint256 hookFinal0, uint256 hookFinal1) = _simulateHookBalances(context, key.fee, params);
 
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 
         if (IIndex(_index).previewBoundsCheck(token0, hookFinal0, token1, hookFinal1)) {
-            _addLiquidity(key);
+            _addLiquidity(key, context, balance0, balance1);
         }
 
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
@@ -104,21 +112,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         return (BaseHook.afterSwap.selector, 0);
     }
 
-    function _simulateHookBalances(PoolKey calldata key, SwapParams calldata params)
-        private
-        view
-        returns (uint256 hookFinal0, uint256 hookFinal1)
-    {
-        (SimulationContext memory context, uint256 balance0, uint256 balance1) = _prepareSimulation(key);
-
-        if (context.hookLiquidity == 0) {
-            return (balance0, balance1);
-        }
-
-        return _finalizeHookBalances(context, key.fee, params);
-    }
-
-    function _prepareSimulation(PoolKey calldata key)
+    function _prepareSimulation(PoolKey calldata key, SwapParams calldata params)
         private
         view
         returns (SimulationContext memory context, uint256 balance0, uint256 balance1)
@@ -129,8 +123,19 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         uint128 poolLiquidity = poolManager.getLiquidity(poolId);
 
         int24 tickLower = TickBitmap.compress(currentTick, key.tickSpacing) * key.tickSpacing;
+        // Edge case: currentTick sits exactly on the lower grid boundary.
+        // For zeroForOne (price moves down) this range yields sqrtPriceTarget == sqrtPriceCurrent
+        // so SwapMath cannot move the price and JIT is useless.
+        // Shift the range one cell down so the current price ends up at the upper boundary.
+        if (params.zeroForOne && currentTick == tickLower) {
+            tickLower -= key.tickSpacing;
+        }
+        int24 tickUpper = tickLower + key.tickSpacing;
+
+        context.tickLower = tickLower;
+        context.tickUpper = tickUpper;
         context.sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(tickLower);
-        context.sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing);
+        context.sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(tickUpper);
 
         balance0 = IERC20(Currency.unwrap(key.currency0)).balanceOf(_index);
         balance1 = IERC20(Currency.unwrap(key.currency1)).balanceOf(_index);
@@ -159,7 +164,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         context.totalLiquidity = poolLiquidity + context.hookLiquidity;
     }
 
-    function _finalizeHookBalances(SimulationContext memory context, uint24 fee, SwapParams calldata params)
+    function _simulateHookBalances(SimulationContext memory context, uint24 fee, SwapParams calldata params)
         private
         pure
         returns (uint256 hookFinal0, uint256 hookFinal1)
@@ -189,62 +194,40 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         hookFinal1 = context.excess1 + withdraw1 + (params.zeroForOne ? 0 : hookFeeShare);
     }
 
-    function _addLiquidity(PoolKey calldata key) private {
-        PoolId poolId = key.toId();
-
-        // Get current pool state
-        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
-
-        // Calculate tick range: [roundedTick, roundedTick + tickSpacing]
-        int24 tickSpacing = key.tickSpacing;
-        int24 tickLower = TickBitmap.compress(currentTick, tickSpacing) * tickSpacing;
-        int24 tickUpper = tickLower + tickSpacing;
-
+    function _addLiquidity(
+        PoolKey calldata key,
+        SimulationContext memory context,
+        uint256 balance0,
+        uint256 balance1
+    ) private {
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 
-        // Get balances held by index
-        uint256 balance0 = IERC20(token0).balanceOf(_index);
-        uint256 balance1 = IERC20(token1).balanceOf(_index);
+        if (balance0 > 0) {
+            IIndex(_index).lendAsset(token0, balance0);
+        }
+        if (balance1 > 0) {
+            IIndex(_index).lendAsset(token1, balance1);
+        }
 
-        if (balance0 == 0 && balance1 == 0) return;
-
-        // Get assets from index
-        IIndex(_index).lendAsset(token0, balance0);
-        IIndex(_index).lendAsset(token1, balance1);
-
-        // Calculate max liquidity from available balances
-        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(tickLower),
-            TickMath.getSqrtPriceAtTick(tickUpper),
-            balance0,
-            balance1
-        );
-
-        if (liquidity == 0) return;
-
-        // Add liquidity to the pool
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             key,
             ModifyLiquidityParams({
-                tickLower: tickLower,
-                tickUpper: tickUpper,
-                liquidityDelta: int256(uint256(liquidity)),
+                tickLower: context.tickLower,
+                tickUpper: context.tickUpper,
+                liquidityDelta: int256(uint256(context.hookLiquidity)),
                 salt: 0
             }),
             ""
         );
 
-        // Settle the amounts owed to the pool
         _settle(key.currency0, delta.amount0());
         _settle(key.currency1, delta.amount1());
 
-        // Store active position for removal in afterSwap
-        _activePositions[poolId] = ActivePosition({
-            tickLower: tickLower,
-            tickUpper: tickUpper,
-            liquidity: liquidity
+        _activePositions[key.toId()] = ActivePosition({
+            tickLower: context.tickLower,
+            tickUpper: context.tickUpper,
+            liquidity: context.hookLiquidity
         });
     }
 
