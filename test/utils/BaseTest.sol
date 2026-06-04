@@ -11,6 +11,9 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 
 import {Index, AssetConfig} from "src/Index.sol";
 import {IndexFactory} from "src/IndexFactory.sol";
@@ -20,9 +23,11 @@ import {MockERC20} from "test/mocks/MockERC20.sol";
 import {MockAggregator} from "test/mocks/MockAggregator.sol";
 
 import {UniswapDeployers} from "./UniswapDeployers.sol";
+import {EasyPosm} from "./libraries/EasyPosm.sol";
 
 abstract contract BaseTest is Test, UniswapDeployers {
     using SafeERC20 for IERC20;
+    using EasyPosm for IPositionManager;
     using CurrencyLibrary for Currency;
 
     address public usdtFeed;
@@ -62,6 +67,36 @@ abstract contract BaseTest is Test, UniswapDeployers {
             : _encodeSqrtPriceX96(1e18, 3000e6); // currency0=USDT, currency1=WETH
         poolManager.initialize(poolKey, sqrtPriceX96);
 
+        // Provide full-range liquidity to the pool (so swaps can execute)
+        int24 tickLower = TickMath.minUsableTick(poolKey.tickSpacing);
+        int24 tickUpper = TickMath.maxUsableTick(poolKey.tickSpacing);
+
+        deal(weth, address(this), 20_000e18);
+        deal(usdt, address(this), 50_000_000e6);
+
+        uint128 liquidityAmount = 4.6e17;
+        {
+            (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+                sqrtPriceX96,
+                TickMath.getSqrtPriceAtTick(tickLower),
+                TickMath.getSqrtPriceAtTick(tickUpper),
+                liquidityAmount
+            );
+
+            positionManager.mint(
+                poolKey,
+                tickLower,
+                tickUpper,
+                liquidityAmount,
+                amount0Expected + 1,
+                amount1Expected + 1,
+                address(this),
+                block.timestamp,
+                new bytes(0)
+            );
+        }
+
+        // Grant hook role
         bytes32 hookRole = createdIndex.HOOK_ROLE();
 
         vm.prank(defaultAdmin);
@@ -111,6 +146,12 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
         vm.label(usdt, "USDT");
         vm.label(weth, "WETH");
+
+        IERC20(weth).approve(address(permit2), type(uint256).max);
+        IERC20(usdt).approve(address(permit2), type(uint256).max);
+
+        permit2.approve(usdt, address(positionManager), type(uint160).max, type(uint48).max);
+        permit2.approve(weth, address(positionManager), type(uint160).max, type(uint48).max);
     }
 
     function _deployFeeds() internal {
