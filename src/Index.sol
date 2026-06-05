@@ -8,7 +8,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-import {IIndex, AssetConfig, Asset} from "./interfaces/IIndex.sol";
+import {IIndex, AssetConfig, Asset, JitDebt} from "./interfaces/IIndex.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 
 contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
@@ -23,7 +23,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     mapping(address token => uint16 targetWeightBps) private _targetWeightBps;
     mapping(address token => uint16 toleranceBps) private _toleranceBps;
     mapping(address token => uint64 maxPriceStaleness) private _maxPriceStaleness;
-    mapping(address token => uint256 amount) private _balanceBeforeLend;
+
+    JitDebt private _jitDebt;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -101,43 +102,69 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
-    function lendAsset(address token, uint256 amount) external onlyRole(HOOK_ROLE) {
-        if (amount == 0) {
+    function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) {
+        if (_jitDebt.hook != address(0)) {
+            revert JitIsActive();
+        }
+
+        if (token0 == address(0) || token1 == address(0)) {
+            revert ZeroAddress();
+        }
+        if (amount0 == 0 || amount1 == 0) {
             revert ZeroAmount();
         }
 
-        if (token == address(0)) {
-            revert ZeroAddress();
+        if (!_tokenSet.contains(token0)) {
+            revert InvalidAsset(token0);
         }
 
-        if (!_tokenSet.contains(token)) {
-            revert InvalidAsset(token);
+        if (!_tokenSet.contains(token1)) {
+            revert InvalidAsset(token1);
         }
 
-        if (IERC20(token).balanceOf(address(this)) < amount) {
-            revert InsufficientAssetBalance(token, amount);
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+
+        if (balance0 < amount0) {
+            revert InsufficientAssetBalance(token0, amount0);
         }
 
-        if (_balanceBeforeLend[token] > 0) {
-            revert OutstandingDebt(msg.sender, token, _balanceBeforeLend[token]);
+        if (balance1 < amount1) {
+            revert InsufficientAssetBalance(token1, amount1);
         }
 
-        _balanceBeforeLend[token] = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransfer(msg.sender, amount);
+        _jitDebt = JitDebt({token0: token0, token1: token1, hook: msg.sender});
+        IERC20(token0).safeTransfer(msg.sender, amount0);
+        IERC20(token1).safeTransfer(msg.sender, amount1);
 
-        emit AssetLent(msg.sender, token, amount);
+        emit AssetLent(msg.sender, token0, amount0, balance0, token1, amount1, balance1);
     }
 
-    function collectAsset(address token) external onlyRole(HOOK_ROLE) {
-        uint256 balanceBeforeLend = _balanceBeforeLend[token];
-        if (IERC20(token).balanceOf(address(this)) < balanceBeforeLend) {
-            revert InsufficientCollectAmount(token, balanceBeforeLend);
+    function collectAssets(address token0, address token1) external onlyRole(HOOK_ROLE) {
+        JitDebt memory jitDebt = _jitDebt;
+
+        if (jitDebt.hook == address(0)) {
+            revert JitIsNotActive();
         }
 
-        uint256 collectedAmount = IERC20(token).balanceOf(address(this)) - balanceBeforeLend;
-        delete _balanceBeforeLend[token];
+        if (token0 != jitDebt.token0 || token1 != jitDebt.token1) {
+            revert TokensMismatch();
+        }
 
-        emit AssetCollected(msg.sender, token, collectedAmount);
+        if (msg.sender != jitDebt.hook) {
+            revert InvalidCollector();
+        }
+
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+
+        if (!_previewBoundsCheck(token0, balance0, token1, balance1)) {
+            revert WeightOutOfBounds(token0, balance0, token1, balance1);
+        }
+
+        delete _jitDebt;
+
+        emit AssetCollected(msg.sender, token0, balance0, token1, balance1);
     }
 
     function getTokens() external view returns (address[] memory) {
@@ -220,8 +247,17 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         address token1,
         uint256 newBalance1
     ) external view returns (bool) {
+        return _previewBoundsCheck(token0, newBalance0, token1, newBalance1);
+    }
+
+    function _previewBoundsCheck(
+        address token0,
+        uint256 newBalance0,
+        address token1,
+        uint256 newBalance1
+    ) private view returns (bool) {
         if (token0 == token1) {
-            revert InvalidAssets();
+            revert SameAssets();
         }
 
         if (!_tokenSet.contains(token0)) {

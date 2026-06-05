@@ -35,12 +35,12 @@ contract DriftwoodHookTest is BaseTest {
     // endregion
 
     function test_swap() public {
-        uint256 bal0Before = IERC20(usdt).balanceOf(address(index));
-        uint256 bal1Before = IERC20(weth).balanceOf(address(index));
+        uint256 bal0Before = IERC20(weth).balanceOf(address(index));
+        uint256 bal1Before = IERC20(usdt).balanceOf(address(index));
         console.log("Balance index before swap: ", bal0Before, bal1Before);
 
         swapRouter.swapExactTokensForTokens({
-            amountIn: 1e2,
+            amountIn: 1e18,
             amountOutMin: 0,
             zeroForOne: true,
             poolKey: poolKey,
@@ -49,10 +49,12 @@ contract DriftwoodHookTest is BaseTest {
             deadline: block.timestamp + 1
         });
 
-        uint256 bal0After = IERC20(usdt).balanceOf(address(index));
-        uint256 bal1After = IERC20(weth).balanceOf(address(index));
+        uint256 bal0After = IERC20(weth).balanceOf(address(index));
+        uint256 bal1After = IERC20(usdt).balanceOf(address(index));
         console.log("Balance index after swap: ", bal0After, bal1After);
 
+        assertGt(bal0After, bal0Before); // Index has weth more than before swap
+        assertLt(bal1After, bal1Before); // Index has usdt less than before swap
         // TODO: check that assets were transferred from index to hook and back, and that the swap was executed correctly
         // assertTrue(hookTotal > 90e18, "Hook should retain most of its deposited tokens");
 

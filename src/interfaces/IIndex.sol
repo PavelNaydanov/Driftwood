@@ -15,9 +15,15 @@ struct Asset {
     uint256 amount;
 }
 
+struct JitDebt {
+    address hook;
+    address token0;
+    address token1;
+}
+
 interface IIndex {
-    event AssetLent(address indexed hook, address indexed token, uint256 amount);
-    event AssetCollected(address indexed hook, address indexed token, uint256 amount);
+    event AssetLent(address indexed hook, address indexed token0, uint256 amount0, uint256 balanceBefore0, address indexed token1, uint256 amount1, uint256 balanceBefore1);
+    event AssetCollected(address indexed hook, address indexed token0, uint256 balanceAfter0, address indexed token1, uint256 balanceAfter1);
 
     error InvalidNumberOfAssets();
     error ZeroAddress();
@@ -26,11 +32,14 @@ interface IIndex {
     error InvalidNumberOfMinAmountsOut();
     error InsufficientAmountOut(address token, uint256 amountOut, uint256 minAmountOut);
     error InvalidAssetAmount(address token, uint256 amount);
-    error InvalidAssets();
+    error SameAssets();
+    error TokensMismatch();
     error InvalidAsset(address token);
     error InsufficientAssetBalance(address token, uint256 amount);
-    error OutstandingDebt(address hook, address token, uint256 amount);
-    error InsufficientCollectAmount(address token, uint256 amount);
+    error JitIsActive();
+    error JitIsNotActive();
+    error InvalidCollector();
+    error WeightOutOfBounds(address token0, uint256 balance0, address token1, uint256 balance1);
     error InvalidWeightBps(address token);
     error InvalidTotalWeightBps();
     error InvalidToleranceBps(address token);
@@ -39,8 +48,8 @@ interface IIndex {
     error InvalidMaxPriceStaleness(address token);
 
     function initialize(string calldata name, string calldata symbol, AssetConfig[] calldata assets, address defaultAdmin) external;
-    function lendAsset(address token, uint256 amount) external;
-    function collectAsset(address token) external;
+    function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external;
+    function collectAssets(address token0, address token1) external;
     function previewBoundsCheck(
         address token0,
         uint256 newBalance0,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
-import {console} from "forge-std/Test.sol"; // TODO: remove
 import {BaseHook} from "@openzeppelin/uniswap-hooks/src/base/BaseHook.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IPoolManager, SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -227,15 +226,20 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         uint256 balance0,
         uint256 balance1
     ) private {
+        if (balance0 == 0 || balance1 == 0) {
+            return;
+        }
+
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 
-        if (balance0 > 0) {
-            IIndex(_index).lendAsset(token0, balance0);
-        }
-        if (balance1 > 0) {
-            IIndex(_index).lendAsset(token1, balance1);
-        }
+        _activePositions[key.toId()] = ActivePosition({
+            tickLower: context.tickLower,
+            tickUpper: context.tickUpper,
+            liquidity: context.hookLiquidity
+        });
+
+        IIndex(_index).lendAssets(token0, balance0, token1, balance1);
 
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             key,
@@ -250,12 +254,6 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
         _settle(key.currency0, delta.amount0());
         _settle(key.currency1, delta.amount1());
-
-        _activePositions[key.toId()] = ActivePosition({
-            tickLower: context.tickLower,
-            tickUpper: context.tickUpper,
-            liquidity: context.hookLiquidity
-        });
     }
 
     function _removeLiquidity(PoolKey calldata key, ActivePosition memory pos) private {
@@ -271,9 +269,6 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             ""
         );
 
-        console.log("DeltaAmount0: ", delta.amount0());
-        console.log("DeltaAmount1: ", delta.amount1());
-
         // Take back the tokens (principal + fees)
         _take(key.currency0, delta.amount0());
         _take(key.currency1, delta.amount1());
@@ -284,18 +279,14 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 
-        // Get balances held by hook
-        uint256 balance0 = IERC20(token0).balanceOf(address(this));
-        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+        IERC20(token0).safeTransfer(_index, IERC20(token0).balanceOf(address(this)));
+        IERC20(token1).safeTransfer(_index, IERC20(token1).balanceOf(address(this)));
 
-        IERC20(token0).safeTransfer(_index, balance0);
-        IERC20(token1).safeTransfer(_index, balance1);
-
-        IIndex(_index).collectAsset(token0);
-        IIndex(_index).collectAsset(token1);
+        IIndex(_index).collectAssets(token0, token1);
     }
 
     /// @dev Mirrors v4-core LiquidityAmounts.getAmountsForLiquidity (not exported in periphery).
+    // TODO: change on "@uniswap/v4-core/test/utils/LiquidityAmounts.sol"?
     function _getAmountsForLiquidity(
         uint160 sqrtPriceX96,
         uint160 sqrtPriceLowerX96,

@@ -152,6 +152,9 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
         permit2.approve(usdt, address(positionManager), type(uint160).max, type(uint48).max);
         permit2.approve(weth, address(positionManager), type(uint160).max, type(uint48).max);
+
+        IERC20(weth).approve(address(swapRouter), type(uint256).max);
+        IERC20(usdt).approve(address(swapRouter), type(uint256).max);
     }
 
     function _deployFeeds() internal {
