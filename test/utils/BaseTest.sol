@@ -166,20 +166,20 @@ abstract contract BaseTest is Test, UniswapDeployers {
         assetConfigs = new AssetConfig[](2);
         assetConfigs[0] = AssetConfig({
             token: usdt,
-            dataFeed: usdtFeed,
             amount: 3_000_000_000e6,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
             targetWeightBps: 5_000, // 50%
-            toleranceBps: 500, // 5%
-            maxPriceStaleness: 86400
+            toleranceBps: 500 // 5%
         });
 
         assetConfigs[1] = AssetConfig({
             token: weth,
-            dataFeed: ethFeed,
             amount: 1_000_000e18,
+            dataFeed: ethFeed,
+            maxPriceStaleness: 3600,
             targetWeightBps: 5_000, // 50%
-            toleranceBps: 500, // 5%
-            maxPriceStaleness: 3600
+            toleranceBps: 500 // 5%
         });
     }
 

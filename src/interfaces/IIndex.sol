@@ -5,16 +5,18 @@ struct AssetConfig {
     address token;
     uint256 amount;
     address dataFeed;
+    uint32 maxPriceStaleness; // sec
     uint16 targetWeightBps; // 4000 = 40%
     uint16 toleranceBps; // 500 = 5pp
-    uint64 maxPriceStaleness; // sec
 }
 
 struct Asset {
     address dataFeed;
+    uint8 feedDecimals;
+    uint8 tokenDecimals;
+    uint32 maxPriceStaleness;
     uint16 targetWeightBps;
     uint16 toleranceBps;
-    uint64 maxPriceStaleness;
 }
 
 struct AssetBalance {

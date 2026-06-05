@@ -216,9 +216,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             _tokenSet.add(config.token);
             _assets[config.token] = Asset({
                 dataFeed: config.dataFeed,
+                feedDecimals: AggregatorV3Interface(config.dataFeed).decimals(),
+                tokenDecimals: IERC20Metadata(config.token).decimals(),
+                maxPriceStaleness: config.maxPriceStaleness,
                 targetWeightBps: config.targetWeightBps,
-                toleranceBps: config.toleranceBps,
-                maxPriceStaleness: config.maxPriceStaleness
+                toleranceBps: config.toleranceBps
             });
 
             if (IERC20(config.token).balanceOf(address(this)) != config.amount) {
@@ -315,16 +317,15 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     function _snapshotUsdValue(address token, uint256 balance) private view returns (uint256 value) {
-        uint256 priceInUsd = _readPriceInUsd(token);
+        Asset memory asset = _assets[token];
 
-        uint256 tokenUnit = 10 ** IERC20Metadata(token).decimals();
+        uint256 priceInUsd = _readPriceInUsd(token, asset);
+
+        uint256 tokenUnit = 10 ** asset.tokenDecimals;
         value = Math.mulDiv(balance, priceInUsd, tokenUnit);
     }
 
-    function _readPriceInUsd(address token) private view returns (uint256) {
-        Asset memory asset = _assets[token];
-
-        uint8 feedDecimals = AggregatorV3Interface(asset.dataFeed).decimals();
+    function _readPriceInUsd(address token, Asset memory asset) private view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(asset.dataFeed).latestRoundData();
 
         if (answer <= 0) {
@@ -337,10 +338,10 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         uint256 price = SafeCast.toUint256(answer);
 
-        if (feedDecimals < 18) {
-            return price * (10 ** (18 - feedDecimals));
-        } else if (feedDecimals > 18) {
-            return price / (10 ** (feedDecimals - 18));
+        if (asset.feedDecimals < 18) {
+            return price * (10 ** (18 - asset.feedDecimals));
+        } else if (asset.feedDecimals > 18) {
+            return price / (10 ** (asset.feedDecimals - 18));
         }
 
         return price;
