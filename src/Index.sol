@@ -7,6 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IIndex, AssetConfig, Asset, AssetBalance, JitDebt} from "./interfaces/IIndex.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
@@ -320,7 +321,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             revert StalePrice(token);
         }
 
-        uint256 price = uint256(answer);
+        uint256 price = SafeCast.toUint256(answer);
 
         if (feedDecimals < 18) {
             return price * (10 ** (18 - feedDecimals));

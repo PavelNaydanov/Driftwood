@@ -49,7 +49,7 @@ abstract contract UniswapDeployers {
         MockERC20 token0 = deployToken();
         MockERC20 token1 = deployToken();
 
-        if (token0 > token1) {
+        if (address(token0) > address(token1)) {
             (token0, token1) = (token1, token0);
         }
 

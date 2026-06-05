@@ -18,6 +18,7 @@ import {CurrencySettler} from "@openzeppelin/uniswap-hooks/src/utils/CurrencySet
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IDriftwoodHook} from "./interfaces/IDriftwoodHook.sol";
 import {IIndex} from "./interfaces/IIndex.sol";
@@ -294,7 +295,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             return;
         }
 
-        uint256 amount = uint256(int256(-delta));
+        uint256 amount = SafeCast.toUint256(-int256(delta));
         CurrencySettler.settle(currency, poolManager, address(this), amount, false);
     }
 
@@ -304,7 +305,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             return;
         }
 
-        uint256 amount = uint256(int256(delta));
+        uint256 amount = SafeCast.toUint256(int256(delta));
         CurrencySettler.take(currency, poolManager, address(this), amount, false);
     }
 }
