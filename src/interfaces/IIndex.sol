@@ -22,8 +22,8 @@ struct JitDebt {
 }
 
 interface IIndex {
-    event AssetLent(address indexed hook, address indexed token0, uint256 amount0, uint256 balanceBefore0, address indexed token1, uint256 amount1, uint256 balanceBefore1);
-    event AssetCollected(address indexed hook, address indexed token0, uint256 balanceAfter0, address indexed token1, uint256 balanceAfter1);
+    event AssetsLent(address indexed hook, address indexed token0, uint256 amount0, uint256 balanceBefore0, address indexed token1, uint256 amount1, uint256 balanceBefore1);
+    event AssetsCollected(address indexed hook, address indexed token0, uint256 balanceAfter0, address indexed token1, uint256 balanceAfter1);
 
     error InvalidNumberOfAssets();
     error ZeroAddress();

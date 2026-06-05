@@ -137,7 +137,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         IERC20(token0).safeTransfer(msg.sender, amount0);
         IERC20(token1).safeTransfer(msg.sender, amount1);
 
-        emit AssetLent(msg.sender, token0, amount0, balance0, token1, amount1, balance1);
+        emit AssetsLent(msg.sender, token0, amount0, balance0, token1, amount1, balance1);
     }
 
     function collectAssets(address token0, address token1) external onlyRole(HOOK_ROLE) {
@@ -164,7 +164,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         delete _jitDebt;
 
-        emit AssetCollected(msg.sender, token0, balance0, token1, balance1);
+        emit AssetsCollected(msg.sender, token0, balance0, token1, balance1);
     }
 
     function getTokens() external view returns (address[] memory) {

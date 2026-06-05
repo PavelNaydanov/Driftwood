@@ -42,8 +42,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         uint160 sqrtPriceUpperX96;
         uint128 hookLiquidity;
         uint128 totalLiquidity;
-        uint256 excess0;
-        uint256 excess1;
+        uint256 unused0;
+        uint256 unused1;
     }
 
     address private _index;
@@ -89,7 +89,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 
-        (uint256 hookFinal0, uint256 hookFinal1) = _simulateHookBalances(context, key.fee, params);
+        (uint256 predictedReturn0, uint256 predictedReturn1) = _simulateHookBalances(context, key.fee, params);
 
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
@@ -99,12 +99,12 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         // hook deposits balance_i in beforeSwap and trader input is not yet settled.
         // Hook take amount equals (hookFinal_i - excess_i), which after cancelling
         // excess gives the simplified inequality below.
-        if (!_poolHasCapacityForTake(token0, token1, balance0, balance1, hookFinal0, hookFinal1)) {
+        if (!_poolHasCapacityForTake(token0, token1, balance0, balance1, predictedReturn0, predictedReturn1)) {
             return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 
-        if (IIndex(_index).previewBoundsCheck(token0, hookFinal0, token1, hookFinal1)) {
-            _addLiquidity(key, context, balance0, balance1);
+        if (IIndex(_index).previewBoundsCheck(token0, predictedReturn0, token1, predictedReturn1)) {
+            _openJitPosition(key, context, balance0, balance1);
         }
 
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
@@ -119,7 +119,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     ) internal override returns (bytes4, int128) {
         ActivePosition memory pos = _activePositions[key.toId()];
         if (pos.liquidity > 0) {
-            _removeLiquidity(key, pos);
+            _closeJitPosition(key, pos);
         }
 
         return (BaseHook.afterSwap.selector, 0);
@@ -172,8 +172,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             context.hookLiquidity
         );
 
-        context.excess0 = balance0 - deposit0;
-        context.excess1 = balance1 - deposit1;
+        context.unused0 = balance0 - deposit0;
+        context.unused1 = balance1 - deposit1;
         context.totalLiquidity = poolLiquidity + context.hookLiquidity;
     }
 
@@ -182,18 +182,18 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         address token1,
         uint256 balance0,
         uint256 balance1,
-        uint256 hookFinal0,
-        uint256 hookFinal1
+        uint256 predictedReturn0,
+        uint256 predictedReturn1
     ) private view returns (bool) {
         uint256 available0 = IERC20(token0).balanceOf(address(poolManager)) + balance0;
         uint256 available1 = IERC20(token1).balanceOf(address(poolManager)) + balance1;
-        return hookFinal0 <= available0 && hookFinal1 <= available1;
+        return predictedReturn0 <= available0 && predictedReturn1 <= available1;
     }
 
     function _simulateHookBalances(SimulationContext memory context, uint24 fee, SwapParams calldata params)
         private
         pure
-        returns (uint256 hookFinal0, uint256 hookFinal1)
+        returns (uint256 predictedReturn0, uint256 predictedReturn1)
     {
         uint160 sqrtPriceTargetX96 = params.zeroForOne
             ? (params.sqrtPriceLimitX96 > context.sqrtPriceLowerX96 ? params.sqrtPriceLimitX96 : context.sqrtPriceLowerX96)
@@ -216,11 +216,11 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
         uint256 hookFeeShare = Math.mulDiv(feeAmount, context.hookLiquidity, context.totalLiquidity);
 
-        hookFinal0 = context.excess0 + withdraw0 + (params.zeroForOne ? hookFeeShare : 0);
-        hookFinal1 = context.excess1 + withdraw1 + (params.zeroForOne ? 0 : hookFeeShare);
+        predictedReturn0 = context.unused0 + withdraw0 + (params.zeroForOne ? hookFeeShare : 0);
+        predictedReturn1 = context.unused1 + withdraw1 + (params.zeroForOne ? 0 : hookFeeShare);
     }
 
-    function _addLiquidity(
+    function _openJitPosition(
         PoolKey calldata key,
         SimulationContext memory context,
         uint256 balance0,
@@ -256,7 +256,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         _settle(key.currency1, delta.amount1());
     }
 
-    function _removeLiquidity(PoolKey calldata key, ActivePosition memory pos) private {
+    function _closeJitPosition(PoolKey calldata key, ActivePosition memory pos) private {
         // Remove liquidity from the pool
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             key,
