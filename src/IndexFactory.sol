@@ -6,6 +6,7 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 
 import {IIndexFactory} from "./interfaces/IIndexFactory.sol";
 import {IIndex, AssetConfig} from "./interfaces/IIndex.sol";
+import {ZeroAddress, ZeroAmount} from "./utils/CommonErrors.sol";
 
 contract IndexFactory is IIndexFactory {
     using SafeERC20 for IERC20;

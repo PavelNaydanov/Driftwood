@@ -10,6 +10,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 
 import {IIndex, AssetConfig, Asset, AssetBalance, JitDebt} from "./interfaces/IIndex.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {ZeroAddress, ZeroAmount} from "./utils/CommonErrors.sol";
 
 contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     using SafeERC20 for IERC20;

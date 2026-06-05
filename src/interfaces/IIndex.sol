@@ -47,8 +47,6 @@ interface IIndex {
     );
 
     error InvalidNumberOfAssets();
-    error ZeroAddress();
-    error ZeroAmount();
     error InvalidReceiver();
     error InvalidNumberOfMinAmountsOut();
     error InsufficientAmountOut(address token, uint256 amountOut, uint256 minAmountOut);
@@ -80,4 +78,5 @@ interface IIndex {
         external
         view
         returns (bool);
+    // TODO: add interface
 }

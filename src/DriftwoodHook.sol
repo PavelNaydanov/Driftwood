@@ -21,6 +21,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IDriftwoodHook} from "./interfaces/IDriftwoodHook.sol";
 import {IIndex} from "./interfaces/IIndex.sol";
+import {ZeroAddress} from "./utils/CommonErrors.sol";
 
 contract DriftwoodHook is IDriftwoodHook, BaseHook {
     using PoolIdLibrary for PoolKey;

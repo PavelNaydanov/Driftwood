@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
-interface IDriftwoodHook {
-    // TODO: add interface
-}
+error ZeroAddress();
+error ZeroAmount();
