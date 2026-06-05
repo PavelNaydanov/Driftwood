@@ -63,6 +63,16 @@ abstract contract BaseTest is Test, UniswapDeployers {
             : _encodeSqrtPriceX96(1e18, 3000e6); // currency0=USDT, currency1=WETH
         poolManager.initialize(poolKey, sqrtPriceX96);
 
+        // Provide approves
+        IERC20(weth).approve(address(permit2), type(uint256).max);
+        IERC20(usdt).approve(address(permit2), type(uint256).max);
+
+        permit2.approve(usdt, address(positionManager), type(uint160).max, type(uint48).max);
+        permit2.approve(weth, address(positionManager), type(uint160).max, type(uint48).max);
+
+        IERC20(weth).approve(address(swapRouter), type(uint256).max);
+        IERC20(usdt).approve(address(swapRouter), type(uint256).max);
+
         // Provide full-range liquidity to the pool (so swaps can execute)
         int24 tickLower = TickMath.minUsableTick(poolKey.tickSpacing);
         int24 tickUpper = TickMath.maxUsableTick(poolKey.tickSpacing);
@@ -142,15 +152,6 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
         vm.label(usdt, "USDT");
         vm.label(weth, "WETH");
-
-        IERC20(weth).approve(address(permit2), type(uint256).max);
-        IERC20(usdt).approve(address(permit2), type(uint256).max);
-
-        permit2.approve(usdt, address(positionManager), type(uint160).max, type(uint48).max);
-        permit2.approve(weth, address(positionManager), type(uint160).max, type(uint48).max);
-
-        IERC20(weth).approve(address(swapRouter), type(uint256).max);
-        IERC20(usdt).approve(address(swapRouter), type(uint256).max);
     }
 
     function _deployFeeds() internal {
