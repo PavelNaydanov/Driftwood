@@ -11,6 +11,13 @@ struct AssetConfig {
 }
 
 struct Asset {
+    address dataFeed;
+    uint16 targetWeightBps;
+    uint16 toleranceBps;
+    uint64 maxPriceStaleness;
+}
+
+struct AssetBalance {
     address token;
     uint256 amount;
 }

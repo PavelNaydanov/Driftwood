@@ -22,12 +22,15 @@ contract IndexTest is BaseTest {
         assertEq(index.symbol(), "TSTIDX");
 
         address[] memory tokens = index.getTokens();
-        AssetConfig[] memory assets = _getAssets();
+        AssetConfig[] memory assetConfigs = _getAssetConfigs();
 
-        for (uint256 i = 0; i < assets.length; i++) {
-            assertEq(tokens[i], assets[i].token, "Invalid token");
-            assertEq(index.getDataFeed(tokens[i]), assets[i].dataFeed);
-            assertEq(IERC20(tokens[i]).balanceOf(address(index)), assets[i].amount, "Invalid asset amount");
+        for (uint256 i = 0; i < assetConfigs.length; i++) {
+            assertEq(tokens[i], assetConfigs[i].token, "Invalid token");
+            assertEq(index.getAsset(tokens[i]).dataFeed, assetConfigs[i].dataFeed);
+            assertEq(index.getAsset(tokens[i]).targetWeightBps, assetConfigs[i].targetWeightBps);
+            assertEq(index.getAsset(tokens[i]).toleranceBps, assetConfigs[i].toleranceBps);
+            assertEq(index.getAsset(tokens[i]).maxPriceStaleness, assetConfigs[i].maxPriceStaleness);
+            assertEq(IERC20(tokens[i]).balanceOf(address(index)), assetConfigs[i].amount, "Invalid asset amount");
         }
     }
 

@@ -127,19 +127,19 @@ abstract contract BaseTest is Test, UniswapDeployers {
         _deployTokens();
         _deployFeeds();
 
-        AssetConfig[] memory assets = _getAssets();
+        AssetConfig[] memory assetConfigs = _getAssetConfigs();
 
         address indexImpl = address(new Index());
         createdIndex = Index(Clones.clone(indexImpl));
 
-        for (uint256 i = 0; i < assets.length; i++) {
-            AssetConfig memory asset = assets[i];
+        for (uint256 i = 0; i < assetConfigs.length; i++) {
+            AssetConfig memory asset = assetConfigs[i];
             deal(asset.token, address(this), asset.amount);
 
             IERC20(asset.token).safeTransfer(address(createdIndex), asset.amount);
         }
 
-        createdIndex.initialize("Test Index", "TSTIDX", assets, defaultAdmin);
+        createdIndex.initialize("Test Index", "TSTIDX", assetConfigs, defaultAdmin);
     }
 
     function _deployTokens() internal returns (address[] memory tokens) {
@@ -159,12 +159,12 @@ abstract contract BaseTest is Test, UniswapDeployers {
         ethFeed = address(new MockAggregator(8, 3000e8)); // $3000.00 | feed decimals = 8
     }
 
-    function _getAssets() internal view returns (AssetConfig[] memory assets) {
+    function _getAssetConfigs() internal view returns (AssetConfig[] memory assetConfigs) {
         require(usdt != address(0) && weth != address(0), "Tokens should be deployed");
         require(usdtFeed != address(0) && ethFeed != address(0), "Data feeds should be deployed");
 
-        assets = new AssetConfig[](2);
-        assets[0] = AssetConfig({
+        assetConfigs = new AssetConfig[](2);
+        assetConfigs[0] = AssetConfig({
             token: usdt,
             dataFeed: usdtFeed,
             amount: 3_000_000_000e6,
@@ -173,7 +173,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
             maxPriceStaleness: 86400
         });
 
-        assets[1] = AssetConfig({
+        assetConfigs[1] = AssetConfig({
             token: weth,
             dataFeed: ethFeed,
             amount: 1_000_000e18,

@@ -8,7 +8,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-import {IIndex, AssetConfig, Asset, JitDebt} from "./interfaces/IIndex.sol";
+import {IIndex, AssetConfig, Asset, AssetBalance, JitDebt} from "./interfaces/IIndex.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 
 contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
@@ -19,10 +19,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     bytes32 public constant HOOK_ROLE = keccak256("HOOK_ROLE");
 
     EnumerableSet.AddressSet private _tokenSet;
-    mapping(address token => address dataFeed) private _dataFeeds;
-    mapping(address token => uint16 targetWeightBps) private _targetWeightBps;
-    mapping(address token => uint16 toleranceBps) private _toleranceBps;
-    mapping(address token => uint64 maxPriceStaleness) private _maxPriceStaleness;
+    mapping(address token => Asset asset) private _assets;
 
     JitDebt private _jitDebt;
 
@@ -34,13 +31,13 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     function initialize(
         string calldata name,
         string calldata symbol,
-        AssetConfig[] calldata assets,
+        AssetConfig[] calldata assetConfigs,
         address defaultAdmin
     ) external initializer {
         __ERC20_init(name, symbol);
         __AccessControl_init();
 
-        _initAssets(assets);
+        _initAssets(assetConfigs);
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
 
@@ -53,12 +50,12 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             revert InvalidReceiver();
         }
 
-        Asset[] memory assets = _toAssets(shares, Math.Rounding.Ceil);
-        for (uint256 i = 0; i < assets.length; i++) {
-            Asset memory asset = assets[i];
+        AssetBalance[] memory assetBalances = _toAssets(shares, Math.Rounding.Ceil);
+        for (uint256 i = 0; i < assetBalances.length; i++) {
+            AssetBalance memory assetBalance = assetBalances[i];
 
-            if (asset.amount != 0) {
-                SafeERC20.safeTransferFrom(IERC20(asset.token), msg.sender, address(this), asset.amount);
+            if (assetBalance.amount != 0) {
+                SafeERC20.safeTransferFrom(IERC20(assetBalance.token), msg.sender, address(this), assetBalance.amount);
             }
         }
 
@@ -74,9 +71,9 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             revert InvalidReceiver();
         }
 
-        Asset[] memory assets = _toAssets(shares, Math.Rounding.Floor);
+        AssetBalance[] memory assetBalances = _toAssets(shares, Math.Rounding.Floor);
 
-        uint256 numberOfAssets = assets.length;
+        uint256 numberOfAssets = assetBalances.length;
         if (numberOfAssets != minAmountsOut.length) {
             revert InvalidNumberOfMinAmountsOut();
         }
@@ -84,13 +81,13 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _burn(msg.sender, shares);
 
         for (uint256 i = 0; i < numberOfAssets; i++) {
-            Asset memory asset = assets[i];
-            if (asset.amount < minAmountsOut[i]) {
-                revert InsufficientAmountOut(asset.token, asset.amount, minAmountsOut[i]);
+            AssetBalance memory assetBalance = assetBalances[i];
+            if (assetBalance.amount < minAmountsOut[i]) {
+                revert InsufficientAmountOut(assetBalance.token, assetBalance.amount, minAmountsOut[i]);
             }
 
-            if (asset.amount != 0) {
-                SafeERC20.safeTransfer(IERC20(asset.token), receiver, asset.amount);
+            if (assetBalance.amount != 0) {
+                SafeERC20.safeTransfer(IERC20(assetBalance.token), receiver, assetBalance.amount);
             }
         }
     }
@@ -164,50 +161,52 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return _tokenSet.values();
     }
 
-    function getDataFeed(address token) external view returns (address) {
-        return _dataFeeds[token];
+    function getAsset(address token) external view returns (Asset memory) {
+        return _assets[token];
     }
 
-    function _initAssets(AssetConfig[] memory assets) private {
-        uint256 numberOfAssets = assets.length;
+    function _initAssets(AssetConfig[] memory assetConfigs) private {
+        uint256 numberOfAssets = assetConfigs.length;
         if (numberOfAssets < 2) {
             revert InvalidNumberOfAssets();
         }
 
         uint256 totalWeightBps;
         for (uint256 i = 0; i < numberOfAssets; i++) {
-            AssetConfig memory asset = assets[i];
+            AssetConfig memory config = assetConfigs[i];
 
-            if (asset.token == address(0) || asset.dataFeed == address(0)) {
+            if (config.token == address(0) || config.dataFeed == address(0)) {
                 revert ZeroAddress();
             }
 
-            if (asset.amount == 0) {
+            if (config.amount == 0) {
                 revert ZeroAmount();
             }
 
-            if (asset.targetWeightBps == 0 || asset.targetWeightBps > MAX_BPS) {
-                revert InvalidWeightBps(asset.token);
+            if (config.targetWeightBps == 0 || config.targetWeightBps > MAX_BPS) {
+                revert InvalidWeightBps(config.token);
             }
 
-            if (asset.toleranceBps >= asset.targetWeightBps) {
-                revert InvalidToleranceBps(asset.token);
+            if (config.toleranceBps >= config.targetWeightBps) {
+                revert InvalidToleranceBps(config.token);
             }
 
-            if (asset.maxPriceStaleness == 0) {
-                revert InvalidMaxPriceStaleness(asset.token);
+            if (config.maxPriceStaleness == 0) {
+                revert InvalidMaxPriceStaleness(config.token);
             }
 
-            totalWeightBps += asset.targetWeightBps;
+            totalWeightBps += config.targetWeightBps;
 
-            _tokenSet.add(asset.token);
-            _dataFeeds[asset.token] = asset.dataFeed;
-            _targetWeightBps[asset.token] = asset.targetWeightBps;
-            _toleranceBps[asset.token] = asset.toleranceBps;
-            _maxPriceStaleness[asset.token] = asset.maxPriceStaleness;
+            _tokenSet.add(config.token);
+            _assets[config.token] = Asset({
+                dataFeed: config.dataFeed,
+                targetWeightBps: config.targetWeightBps,
+                toleranceBps: config.toleranceBps,
+                maxPriceStaleness: config.maxPriceStaleness
+            });
 
-            if (IERC20(asset.token).balanceOf(address(this)) != asset.amount) {
-                revert InvalidAssetAmount(asset.token, asset.amount);
+            if (IERC20(config.token).balanceOf(address(this)) != config.amount) {
+                revert InvalidAssetAmount(config.token, config.amount);
             }
         }
 
@@ -216,14 +215,14 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
-    function _toAssets(uint256 shares, Math.Rounding rounding) private view returns (Asset[] memory assets) {
+    function _toAssets(uint256 shares, Math.Rounding rounding) private view returns (AssetBalance[] memory assetBalances) {
         uint256 numberOfAssets = _tokenSet.length();
-        assets = new Asset[](numberOfAssets);
+        assetBalances = new AssetBalance[](numberOfAssets);
 
         for (uint256 i = 0; i < numberOfAssets; i++) {
             address token = _tokenSet.at(i);
 
-            assets[i] = Asset({
+            assetBalances[i] = AssetBalance({
                 token: token,
                 amount: Math.mulDiv(shares, IERC20(token).balanceOf(address(this)), totalSupply(), rounding)
             });
@@ -282,15 +281,16 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
 
         for (uint256 i = 0; i < numberOfTokens; i++) {
-            address token = _tokenSet.at(i);
+            Asset memory asset = _assets[_tokenSet.at(i)];
 
             uint256 actualBps = Math.mulDiv(values[i], MAX_BPS, total);
-            uint16 targetBps = _targetWeightBps[token];
-            uint16 toleranceBps = _toleranceBps[token];
+            uint16 targetBps = asset.targetWeightBps;
 
-            uint256 diff = actualBps > targetBps ? actualBps - targetBps : targetBps - actualBps;
+            uint256 diff = actualBps > targetBps
+                ? actualBps - targetBps
+                : targetBps - actualBps;
 
-            if (diff > toleranceBps) {
+            if (diff > asset.toleranceBps) {
                 return false;
             }
         }
@@ -306,16 +306,16 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     function _readPriceInUsd(address token) private view returns (uint256) {
-        address dataFeed = _dataFeeds[token];
+        Asset memory asset = _assets[token];
 
-        uint8 feedDecimals = AggregatorV3Interface(dataFeed).decimals();
-        (, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(dataFeed).latestRoundData();
+        uint8 feedDecimals = AggregatorV3Interface(asset.dataFeed).decimals();
+        (, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(asset.dataFeed).latestRoundData();
 
         if (answer <= 0) {
             revert InvalidPrice(token);
         }
 
-        if (block.timestamp - updatedAt > _maxPriceStaleness[token]) {
+        if (block.timestamp - updatedAt > asset.maxPriceStaleness) {
             revert StalePrice(token);
         }
 
