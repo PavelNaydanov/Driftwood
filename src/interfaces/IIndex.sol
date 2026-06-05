@@ -22,8 +22,22 @@ struct JitDebt {
 }
 
 interface IIndex {
-    event AssetsLent(address indexed hook, address indexed token0, uint256 amount0, uint256 balanceBefore0, address indexed token1, uint256 amount1, uint256 balanceBefore1);
-    event AssetsCollected(address indexed hook, address indexed token0, uint256 balanceAfter0, address indexed token1, uint256 balanceAfter1);
+    event AssetsLent(
+        address indexed hook,
+        address indexed token0,
+        uint256 amount0,
+        uint256 balanceBefore0,
+        address indexed token1,
+        uint256 amount1,
+        uint256 balanceBefore1
+    );
+    event AssetsCollected(
+        address indexed hook,
+        address indexed token0,
+        uint256 balanceAfter0,
+        address indexed token1,
+        uint256 balanceAfter1
+    );
 
     error InvalidNumberOfAssets();
     error ZeroAddress();
@@ -47,13 +61,16 @@ interface IIndex {
     error StalePrice(address token);
     error InvalidMaxPriceStaleness(address token);
 
-    function initialize(string calldata name, string calldata symbol, AssetConfig[] calldata assets, address defaultAdmin) external;
+    function initialize(
+        string calldata name,
+        string calldata symbol,
+        AssetConfig[] calldata assets,
+        address defaultAdmin
+    ) external;
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external;
     function collectAssets(address token0, address token1) external;
-    function previewBoundsCheck(
-        address token0,
-        uint256 newBalance0,
-        address token1,
-        uint256 newBalance1
-    ) external view returns (bool);
+    function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
+        external
+        view
+        returns (bool);
 }

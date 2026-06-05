@@ -77,12 +77,11 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         });
     }
 
-    function _beforeSwap(
-        address,
-        PoolKey calldata key,
-        SwapParams calldata params,
-        bytes calldata
-    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
         (SimulationContext memory context, uint256 balance0, uint256 balance1) = _prepareSimulation(key, params);
 
         if (context.hookLiquidity == 0) {
@@ -110,13 +109,11 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function _afterSwap(
-        address,
-        PoolKey calldata key,
-        SwapParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) internal override returns (bytes4, int128) {
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
+        internal
+        override
+        returns (bytes4, int128)
+    {
         ActivePosition memory pos = _activePositions[key.toId()];
         if (pos.liquidity > 0) {
             _closeJitPosition(key, pos);
@@ -154,11 +151,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         balance1 = IERC20(Currency.unwrap(key.currency1)).balanceOf(_index);
 
         context.hookLiquidity = LiquidityAmounts.getLiquidityForAmounts(
-            context.sqrtPriceX96,
-            context.sqrtPriceLowerX96,
-            context.sqrtPriceUpperX96,
-            balance0,
-            balance1
+            context.sqrtPriceX96, context.sqrtPriceLowerX96, context.sqrtPriceUpperX96, balance0, balance1
         );
 
         if (context.hookLiquidity == 0) {
@@ -166,10 +159,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         }
 
         (uint256 deposit0, uint256 deposit1) = _getAmountsForLiquidity(
-            context.sqrtPriceX96,
-            context.sqrtPriceLowerX96,
-            context.sqrtPriceUpperX96,
-            context.hookLiquidity
+            context.sqrtPriceX96, context.sqrtPriceLowerX96, context.sqrtPriceUpperX96, context.hookLiquidity
         );
 
         context.unused0 = balance0 - deposit0;
@@ -196,22 +186,19 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         returns (uint256 predictedReturn0, uint256 predictedReturn1)
     {
         uint160 sqrtPriceTargetX96 = params.zeroForOne
-            ? (params.sqrtPriceLimitX96 > context.sqrtPriceLowerX96 ? params.sqrtPriceLimitX96 : context.sqrtPriceLowerX96)
-            : (params.sqrtPriceLimitX96 < context.sqrtPriceUpperX96 ? params.sqrtPriceLimitX96 : context.sqrtPriceUpperX96);
+            ? (params.sqrtPriceLimitX96 > context.sqrtPriceLowerX96
+                    ? params.sqrtPriceLimitX96
+                    : context.sqrtPriceLowerX96)
+            : (params.sqrtPriceLimitX96 < context.sqrtPriceUpperX96
+                    ? params.sqrtPriceLimitX96
+                    : context.sqrtPriceUpperX96);
 
         (uint160 sqrtPriceNextX96,,, uint256 feeAmount) = SwapMath.computeSwapStep(
-            context.sqrtPriceX96,
-            sqrtPriceTargetX96,
-            context.totalLiquidity,
-            params.amountSpecified,
-            fee
+            context.sqrtPriceX96, sqrtPriceTargetX96, context.totalLiquidity, params.amountSpecified, fee
         );
 
         (uint256 withdraw0, uint256 withdraw1) = _getAmountsForLiquidity(
-            sqrtPriceNextX96,
-            context.sqrtPriceLowerX96,
-            context.sqrtPriceUpperX96,
-            context.hookLiquidity
+            sqrtPriceNextX96, context.sqrtPriceLowerX96, context.sqrtPriceUpperX96, context.hookLiquidity
         );
 
         uint256 hookFeeShare = Math.mulDiv(feeAmount, context.hookLiquidity, context.totalLiquidity);
@@ -234,9 +221,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         address token1 = Currency.unwrap(key.currency1);
 
         _activePositions[key.toId()] = ActivePosition({
-            tickLower: context.tickLower,
-            tickUpper: context.tickUpper,
-            liquidity: context.hookLiquidity
+            tickLower: context.tickLower, tickUpper: context.tickUpper, liquidity: context.hookLiquidity
         });
 
         IIndex(_index).lendAssets(token0, balance0, token1, balance1);
@@ -306,7 +291,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     /// @dev Settle a negative delta (transfer tokens to pool manager)
     function _settle(Currency currency, int128 delta) private {
         if (delta >= 0) {
-                return;
+            return;
         }
 
         uint256 amount = uint256(int256(-delta));

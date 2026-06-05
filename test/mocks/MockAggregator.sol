@@ -57,19 +57,11 @@ contract MockAggregator is AggregatorV3Interface {
         return 1;
     }
 
-    function getRoundData(uint80)
-        external
-        view
-        returns (uint80, int256, uint256, uint256, uint80)
-    {
+    function getRoundData(uint80) external view returns (uint80, int256, uint256, uint256, uint80) {
         return (_roundId, _answer, _startedAt, _updatedAt, _answeredInRound);
     }
 
-    function latestRoundData()
-        external
-        view
-        returns (uint80, int256, uint256, uint256, uint80)
-    {
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         return (_roundId, _answer, _startedAt, _updatedAt, _answeredInRound);
     }
 }

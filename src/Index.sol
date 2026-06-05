@@ -15,7 +15,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    uint16 constant public MAX_BPS = 10_000;
+    uint16 public constant MAX_BPS = 10_000;
     bytes32 public constant HOOK_ROLE = keccak256("HOOK_ROLE");
 
     EnumerableSet.AddressSet private _tokenSet;
@@ -36,10 +36,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         string calldata symbol,
         AssetConfig[] calldata assets,
         address defaultAdmin
-    )
-        external
-        initializer
-    {
+    ) external initializer {
         __ERC20_init(name, symbol);
         __AccessControl_init();
 
@@ -68,11 +65,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _mint(receiver, shares);
     }
 
-    function redeem(
-        uint256 shares,
-        address receiver,
-        uint256[] calldata minAmountsOut
-    ) external {
+    function redeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut) external {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -223,11 +216,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
-    function _toAssets(uint256 shares, Math.Rounding rounding)
-        private
-        view
-        returns (Asset[] memory assets)
-    {
+    function _toAssets(uint256 shares, Math.Rounding rounding) private view returns (Asset[] memory assets) {
         uint256 numberOfAssets = _tokenSet.length();
         assets = new Asset[](numberOfAssets);
 
@@ -241,21 +230,19 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
-    function previewBoundsCheck(
-        address token0,
-        uint256 newBalance0,
-        address token1,
-        uint256 newBalance1
-    ) external view returns (bool) {
+    function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
+        external
+        view
+        returns (bool)
+    {
         return _previewBoundsCheck(token0, newBalance0, token1, newBalance1);
     }
 
-    function _previewBoundsCheck(
-        address token0,
-        uint256 newBalance0,
-        address token1,
-        uint256 newBalance1
-    ) private view returns (bool) {
+    function _previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
+        private
+        view
+        returns (bool)
+    {
         if (token0 == token1) {
             revert SameAssets();
         }
@@ -301,9 +288,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             uint16 targetBps = _targetWeightBps[token];
             uint16 toleranceBps = _toleranceBps[token];
 
-            uint256 diff = actualBps > targetBps
-                ? actualBps - targetBps
-                : targetBps - actualBps;
+            uint256 diff = actualBps > targetBps ? actualBps - targetBps : targetBps - actualBps;
 
             if (diff > toleranceBps) {
                 return false;
@@ -324,8 +309,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         address dataFeed = _dataFeeds[token];
 
         uint8 feedDecimals = AggregatorV3Interface(dataFeed).decimals();
-        (, int256 answer, , uint256 updatedAt,) =
-            AggregatorV3Interface(dataFeed).latestRoundData();
+        (, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(dataFeed).latestRoundData();
 
         if (answer <= 0) {
             revert InvalidPrice(token);

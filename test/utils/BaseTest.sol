@@ -36,18 +36,18 @@ abstract contract BaseTest is Test, UniswapDeployers {
     address usdt;
     address weth;
 
-    function _deployDriftwoodHook(address defaultAdmin) internal returns (DriftwoodHook createdHook, Index createdIndex, PoolKey memory poolKey) {
+    function _deployDriftwoodHook(address defaultAdmin)
+        internal
+        returns (DriftwoodHook createdHook, Index createdIndex, PoolKey memory poolKey)
+    {
         _deployUniswapArtifactsAndLabel();
         createdIndex = _deployIndex(defaultAdmin);
 
-        (Currency currency0, Currency currency1) = usdt < weth
-            ? (Currency.wrap(usdt), Currency.wrap(weth))
-            : (Currency.wrap(weth), Currency.wrap(usdt));
+        (Currency currency0, Currency currency1) =
+            usdt < weth ? (Currency.wrap(usdt), Currency.wrap(weth)) : (Currency.wrap(weth), Currency.wrap(usdt));
 
         // Deploy the hook to an address with the correct flags
-        address flags = address(
-            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x4444 << 144)
-        );
+        address flags = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x4444 << 144));
         bytes memory constructorArgs = abi.encode(poolManager, address(createdIndex));
 
         deployCodeTo("DriftwoodHook.sol:DriftwoodHook", constructorArgs, flags);
@@ -55,11 +55,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
         // Create the pool
         poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(createdHook)
+            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(createdHook)
         });
 
         uint160 sqrtPriceX96 = usdt > weth
@@ -159,7 +155,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
     function _deployFeeds() internal {
         usdtFeed = address(new MockAggregator(8, 1e8)); // $1.00 | feed decimals = 8
-        ethFeed  = address(new MockAggregator(8, 3000e8)); // $3000.00 | feed decimals = 8
+        ethFeed = address(new MockAggregator(8, 3000e8)); // $3000.00 | feed decimals = 8
     }
 
     function _getAssets() internal view returns (AssetConfig[] memory assets) {
