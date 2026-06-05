@@ -270,8 +270,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         IIndex(_index).collectAssets(token0, token1);
     }
 
-    /// @dev Mirrors v4-core LiquidityAmounts.getAmountsForLiquidity (not exported in periphery).
-    // TODO: change on "@uniswap/v4-core/test/utils/LiquidityAmounts.sol"?
+    /// @dev Mirrors v4-core LiquidityAmounts.getAmountsForLiquidity
     function _getAmountsForLiquidity(
         uint160 sqrtPriceX96,
         uint160 sqrtPriceLowerX96,
