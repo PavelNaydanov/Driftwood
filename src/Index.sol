@@ -25,6 +25,16 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     JitDebt private _jitDebt;
 
+    modifier whenJitActive() {
+        _checkJitActive();
+        _;
+    }
+
+    modifier whenJitInactive() {
+        _checkJitInactive();
+        _;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -43,7 +53,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
 
-    function mint(uint256 shares, address receiver) external {
+    function mint(uint256 shares, address receiver) external whenJitInactive {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -64,7 +74,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _mint(receiver, shares);
     }
 
-    function redeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut) external {
+    function redeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut) external whenJitInactive {
         if (shares == 0) {
             revert ZeroAmount();
         }
@@ -94,11 +104,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
-    function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) {
-        if (_jitDebt.hook != address(0)) {
-            revert JitIsActive();
-        }
-
+    function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) whenJitInactive {
         if (token0 == address(0) || token1 == address(0)) {
             revert ZeroAddress();
         }
@@ -132,12 +138,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         emit AssetsLent(msg.sender, token0, amount0, balance0, token1, amount1, balance1);
     }
 
-    function collectAssets(address token0, address token1) external onlyRole(HOOK_ROLE) {
+    function collectAssets(address token0, address token1) external onlyRole(HOOK_ROLE) whenJitActive {
         JitDebt memory jitDebt = _jitDebt;
-
-        if (jitDebt.hook == address(0)) {
-            revert JitIsNotActive();
-        }
 
         if (token0 != jitDebt.token0 || token1 != jitDebt.token1) {
             revert TokensMismatch();
@@ -165,6 +167,18 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     function getAsset(address token) external view returns (Asset memory) {
         return _assets[token];
+    }
+
+    function _checkJitActive() private view {
+        if (_jitDebt.hook == address(0)) {
+            revert JitIsNotActive();
+        }
+    }
+
+    function _checkJitInactive() private view {
+        if (_jitDebt.hook != address(0)) {
+            revert JitIsActive();
+        }
     }
 
     function _initAssets(AssetConfig[] memory assetConfigs) private {
