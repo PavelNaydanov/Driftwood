@@ -24,6 +24,12 @@ struct AssetBalance {
     uint256 amount;
 }
 
+struct AssetWeight {
+    address token;
+    uint16 targetWeightBps;
+    uint16 toleranceBps;
+}
+
 struct JitDebt {
     address hook;
     address token0;
@@ -47,6 +53,8 @@ interface IIndex {
         address indexed token1,
         uint256 balanceAfter1
     );
+    event OracleConfigSet(address indexed token, address dataFeed, uint32 maxPriceStaleness);
+    event AssetWeightSet(address indexed token, uint16 targetWeightBps, uint16 toleranceBps);
 
     error InvalidNumberOfAssets();
     error InvalidReceiver();
@@ -67,6 +75,7 @@ interface IIndex {
     error InvalidPrice(address token);
     error StalePrice(address token);
     error InvalidMaxPriceStaleness(address token);
+    error IncompleteTokenSet();
 
     function initialize(
         string calldata name,

@@ -9,7 +9,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IIndex, AssetConfig, Asset, AssetBalance, JitDebt} from "./interfaces/IIndex.sol";
+import {IIndex, AssetConfig, Asset, AssetBalance, AssetWeight, JitDebt} from "./interfaces/IIndex.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {ZeroAddress, ZeroAmount} from "./utils/CommonErrors.sol";
 
@@ -169,6 +169,75 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return _assets[token];
     }
 
+    function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
+        if (!_tokenSet.contains(token)) {
+            revert InvalidAsset(token);
+        }
+
+        _checkOracleConfig(token, dataFeed, maxPriceStaleness);
+        _setOracleConfig(token, dataFeed, maxPriceStaleness);
+    }
+
+    function _setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private {
+        _assets[token].dataFeed = dataFeed;
+        _assets[token].feedDecimals = AggregatorV3Interface(dataFeed).decimals();
+        _assets[token].maxPriceStaleness = maxPriceStaleness;
+
+        emit OracleConfigSet(token, dataFeed, maxPriceStaleness);
+    }
+
+    function _checkOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private pure {
+        if (dataFeed == address(0)) {
+            revert ZeroAddress();
+        }
+
+        if (maxPriceStaleness == 0) {
+            revert InvalidMaxPriceStaleness(token);
+        }
+    }
+
+    /// @dev Caller responsible for no duplicates; if violated, sum invariant can drift
+    function setAssetWeights(AssetWeight[] calldata assetWeights) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
+        if (assetWeights.length != _tokenSet.length()) {
+            revert IncompleteTokenSet();
+        }
+
+        uint256 totalWeightBps;
+        for (uint256 i = 0; i < assetWeights.length; i++) {
+            AssetWeight memory assetWeight = assetWeights[i];
+
+            if (!_tokenSet.contains(assetWeight.token)) {
+                revert InvalidAsset(assetWeight.token);
+            }
+
+            _checkAssetWeight(assetWeight.token, assetWeight.targetWeightBps, assetWeight.toleranceBps);
+            _setAssetWeight(assetWeight.token, assetWeight.targetWeightBps, assetWeight.toleranceBps);
+
+            totalWeightBps += assetWeight.targetWeightBps;
+        }
+
+        if (totalWeightBps != MAX_BPS) {
+            revert InvalidTotalWeightBps();
+        }
+    }
+
+    function _setAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private {
+        _assets[token].targetWeightBps = targetWeightBps;
+        _assets[token].toleranceBps = toleranceBps;
+
+        emit AssetWeightSet(token, targetWeightBps, toleranceBps);
+    }
+
+    function _checkAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private pure {
+        if (targetWeightBps == 0 || targetWeightBps > MAX_BPS) {
+            revert InvalidWeightBps(token);
+        }
+
+        if (toleranceBps >= targetWeightBps) {
+            revert InvalidToleranceBps(token);
+        }
+    }
+
     function _checkJitActive() private view {
         if (_jitDebt.hook == address(0)) {
             revert JitIsNotActive();
@@ -191,7 +260,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         for (uint256 i = 0; i < numberOfAssets; i++) {
             AssetConfig memory config = assetConfigs[i];
 
-            if (config.token == address(0) || config.dataFeed == address(0)) {
+            if (config.token == address(0)) {
                 revert ZeroAddress();
             }
 
@@ -199,17 +268,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
                 revert ZeroAmount();
             }
 
-            if (config.targetWeightBps == 0 || config.targetWeightBps > MAX_BPS) {
-                revert InvalidWeightBps(config.token);
-            }
-
-            if (config.toleranceBps >= config.targetWeightBps) {
-                revert InvalidToleranceBps(config.token);
-            }
-
-            if (config.maxPriceStaleness == 0) {
-                revert InvalidMaxPriceStaleness(config.token);
-            }
+            _checkOracleConfig(config.token, config.dataFeed, config.maxPriceStaleness);
+            _checkAssetWeight(config.token, config.targetWeightBps, config.toleranceBps);
 
             totalWeightBps += config.targetWeightBps;
 
@@ -226,6 +286,9 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             if (IERC20(config.token).balanceOf(address(this)) != config.amount) {
                 revert InvalidAssetAmount(config.token, config.amount);
             }
+
+            emit OracleConfigSet(config.token, config.dataFeed, config.maxPriceStaleness);
+            emit AssetWeightSet(config.token, config.targetWeightBps, config.toleranceBps);
         }
 
         if (totalWeightBps != MAX_BPS) {
