@@ -3,7 +3,6 @@ pragma solidity ^0.8.13;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
@@ -15,7 +14,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {Index, JitDebt} from "src/Index.sol";
 import {IIndex} from "src/interfaces/IIndex.sol";
 import {DriftwoodHook} from "src/DriftwoodHook.sol";
-import {IDriftwoodHook, ActivePosition} from "src/interfaces/IDriftwoodHook.sol";
+import {ActivePosition} from "src/interfaces/IDriftwoodHook.sol";
 import {AggregatorV3Interface} from "src/interfaces/AggregatorV3Interface.sol";
 import {ZeroAddress} from "src/utils/CommonErrors.sol";
 
@@ -23,7 +22,6 @@ import {MockAggregator} from "test/mocks/MockAggregator.sol";
 import {BaseTest} from "test/utils/BaseTest.sol";
 
 contract DriftwoodHookTest is BaseTest {
-    using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
     DriftwoodHook public hook;
