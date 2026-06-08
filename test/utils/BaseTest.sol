@@ -190,4 +190,26 @@ abstract contract BaseTest is Test, UniswapDeployers {
     function _encodeSqrtPriceX96(uint256 amount1, uint256 amount0) internal pure returns (uint160) {
         return uint160(Math.sqrt(FullMath.mulDiv(amount1, 1 << 192, amount0)));
     }
+
+    /// @dev Returns true if `err` contains `selector` anywhere in its bytes.
+    /// V4 wraps hook reverts, so the original selector is nested inside the wrapping.
+    function _revertContainsSelector(bytes memory err, bytes4 selector) internal pure returns (bool) {
+        if (err.length < 4) return false;
+        for (uint256 i = 0; i + 4 <= err.length; i++) {
+            bytes4 chunk;
+            assembly {
+                chunk := mload(add(add(err, 0x20), i))
+            }
+            if (chunk == selector) return true;
+        }
+        return false;
+    }
+
+    /// @dev Asserts that `err` contains `selector` anywhere in its bytes.
+    function _assertRevertContainsSelector(bytes memory err, bytes4 selector) internal pure {
+        assertTrue(
+            _revertContainsSelector(err, selector),
+            "Expected selector not found in revert data"
+        );
+    }
 }
