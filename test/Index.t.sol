@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Index, AssetConfig} from "src/Index.sol";
+import {IIndex} from "src/interfaces/IIndex.sol";
 import {BaseTest} from "./utils/BaseTest.sol";
 
 contract IndexTest is BaseTest {
@@ -13,6 +14,10 @@ contract IndexTest is BaseTest {
     function setUp() public {
         defaultAdmin = makeAddr("defaultAdmin");
         index = _deployIndex(defaultAdmin);
+
+        bytes32 hookRole = index.HOOK_ROLE();
+        vm.prank(defaultAdmin);
+        index.grantRole(hookRole, address(this));
     }
 
     // region - Deploy -
@@ -33,6 +38,23 @@ contract IndexTest is BaseTest {
             assertEq(IERC20(tokens[i]).balanceOf(address(index)), assetConfigs[i].amount, "Invalid asset amount");
         }
     }
+
+    // endregion
+
+    // region - Collect Assets -
+
+    function test_collectAssets_revertsOnWeightOutOfBounds() external {
+        index.lendAssets(weth, 200_000e18, usdt, 1);
+
+        // Don't transfer anything back. collectAssets must revert via Variant B assertion.
+        try index.collectAssets(weth, usdt) {
+            assertTrue(false, "Expected revert but collectAssets succeeded");
+        } catch (bytes memory err) {
+            _assertRevertContainsSelector(err, IIndex.WeightOutOfBounds.selector);
+        }
+    }
+
+    // TODO: continue
 
     // endregion
 }
