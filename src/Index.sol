@@ -169,6 +169,10 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return _assets[token];
     }
 
+    function getJitDebt() external view returns (JitDebt memory) {
+        return _jitDebt;
+    }
+
     function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
         if (!_tokenSet.contains(token)) {
             revert InvalidAsset(token);

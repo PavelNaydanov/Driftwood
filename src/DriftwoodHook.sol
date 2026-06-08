@@ -20,7 +20,7 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IDriftwoodHook} from "./interfaces/IDriftwoodHook.sol";
+import {IDriftwoodHook, ActivePosition, SimulationContext} from "./interfaces/IDriftwoodHook.sol";
 import {IIndex} from "./interfaces/IIndex.sol";
 import {ZeroAddress} from "./utils/CommonErrors.sol";
 
@@ -30,27 +30,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     using StateLibrary for IPoolManager;
     using SafeERC20 for IERC20;
 
-    struct ActivePosition {
-        int24 tickLower;
-        int24 tickUpper;
-        uint128 liquidity;
-    }
-
-    struct SimulationContext {
-        int24 tickLower;
-        int24 tickUpper;
-        uint160 sqrtPriceX96;
-        uint160 sqrtPriceLowerX96;
-        uint160 sqrtPriceUpperX96;
-        uint128 hookLiquidity;
-        uint128 totalLiquidity;
-        uint256 unused0;
-        uint256 unused1;
-    }
-
+    mapping(PoolId poolId => ActivePosition activePosition) private _activePositions;
     address private _index;
-
-    mapping(PoolId => ActivePosition) private _activePositions;
 
     constructor(IPoolManager _poolManager, address index) BaseHook(_poolManager) {
         if (index == address(0)) {
@@ -77,6 +58,10 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
         });
+    }
+
+    function getActivePosition(PoolId poolId) external view returns (ActivePosition memory) {
+        return _activePositions[poolId];
     }
 
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
