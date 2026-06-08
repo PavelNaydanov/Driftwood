@@ -6,7 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {Index, AssetConfig, JitDebt} from "src/Index.sol";
-import {IIndex, AssetBalance} from "src/interfaces/IIndex.sol";
+import {IIndex, AssetBalance, AssetWeight} from "src/interfaces/IIndex.sol";
 import {ZeroAmount, ZeroAddress} from "src/utils/CommonErrors.sol";
 
 import {BaseTest} from "./utils/BaseTest.sol";
@@ -581,6 +581,139 @@ contract IndexTest is BaseTest {
 
         vm.prank(defaultAdmin);
         index.setOracleConfig(usdt, address(dataFeed), 0);
+    }
+
+    // endregion
+
+    // region - Set asset weights -
+
+    function _makeAssetWeights(
+        uint16 usdtTarget,
+        uint16 usdtTolerance,
+        uint16 wethTarget,
+        uint16 wethTolerance
+    ) private view returns (AssetWeight[] memory weights) {
+        weights = new AssetWeight[](2);
+        weights[0] = AssetWeight({token: usdt, targetWeightBps: usdtTarget, toleranceBps: usdtTolerance});
+        weights[1] = AssetWeight({token: weth, targetWeightBps: wethTarget, toleranceBps: wethTolerance});
+    }
+
+    function test_setAssetWeights() external {
+        AssetWeight[] memory newWeights = _makeAssetWeights(6000, 400, 4000, 300);
+
+        address usdtFeedBefore = index.getAsset(usdt).dataFeed;
+        uint32 usdtStalenessBefore = index.getAsset(usdt).maxPriceStaleness;
+        address wethFeedBefore = index.getAsset(weth).dataFeed;
+        uint32 wethStalenessBefore = index.getAsset(weth).maxPriceStaleness;
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+
+        assertEq(index.getAsset(usdt).targetWeightBps, 6000);
+        assertEq(index.getAsset(usdt).toleranceBps, 400);
+        assertEq(index.getAsset(weth).targetWeightBps, 4000);
+        assertEq(index.getAsset(weth).toleranceBps, 300);
+
+        assertEq(index.getAsset(usdt).dataFeed, usdtFeedBefore);
+        assertEq(index.getAsset(usdt).maxPriceStaleness, usdtStalenessBefore);
+        assertEq(index.getAsset(weth).dataFeed, wethFeedBefore);
+        assertEq(index.getAsset(weth).maxPriceStaleness, wethStalenessBefore);
+    }
+
+    function test_setAssetWeights_emitAssetWeightSet() external {
+        AssetWeight[] memory newWeights = _makeAssetWeights(6000, 400, 4000, 300);
+
+        vm.expectEmit(true, true, true, true, address(index));
+        emit IIndex.AssetWeightSet(usdt, 6000, 400);
+
+        vm.expectEmit(true, true, true, true, address(index));
+        emit IIndex.AssetWeightSet(weth, 4000, 300);
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfNotDefaultAdmin() external {
+        address notAdmin = makeAddr("notAdmin");
+        AssetWeight[] memory newWeights = _makeAssetWeights(5000, 500, 5000, 500);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, notAdmin, index.DEFAULT_ADMIN_ROLE()
+            )
+        );
+
+        vm.prank(notAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertWhenJitActive() external {
+        index.lendAssets(weth, 1, usdt, 1);
+
+        AssetWeight[] memory newWeights = _makeAssetWeights(5000, 500, 5000, 500);
+
+        vm.expectRevert(IIndex.JitIsActive.selector);
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfIncompleteTokenSet() external {
+        AssetWeight[] memory newWeights = new AssetWeight[](1);
+        newWeights[0] = AssetWeight({token: usdt, targetWeightBps: 10000, toleranceBps: 500});
+
+        vm.expectRevert(IIndex.IncompleteTokenSet.selector);
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfInvalidAsset() external {
+        address invalidToken = makeAddr("invalidToken");
+        AssetWeight[] memory newWeights = new AssetWeight[](2);
+        newWeights[0] = AssetWeight({token: invalidToken, targetWeightBps: 5000, toleranceBps: 500});
+        newWeights[1] = AssetWeight({token: weth, targetWeightBps: 5000, toleranceBps: 500});
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAsset.selector, invalidToken));
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfTargetZero() external {
+        AssetWeight[] memory newWeights = _makeAssetWeights(0, 0, 5000, 500);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidWeightBps.selector, usdt));
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfTargetExceedsMaxBps() external {
+        AssetWeight[] memory newWeights = _makeAssetWeights(10001, 500, 5000, 500);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidWeightBps.selector, usdt));
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfToleranceGteTarget() external {
+        AssetWeight[] memory newWeights = _makeAssetWeights(5000, 5000, 5000, 500);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidToleranceBps.selector, usdt));
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
+    }
+
+    function test_setAssetWeights_revertIfInvalidTotalWeight() external {
+        AssetWeight[] memory newWeights = _makeAssetWeights(4000, 300, 5000, 500);
+
+        vm.expectRevert(IIndex.InvalidTotalWeightBps.selector);
+
+        vm.prank(defaultAdmin);
+        index.setAssetWeights(newWeights);
     }
 
     // endregion
