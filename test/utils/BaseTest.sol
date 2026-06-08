@@ -212,4 +212,6 @@ abstract contract BaseTest is Test, UniswapDeployers {
             "Expected selector not found in revert data"
         );
     }
+
+    function test() external override {}
 }

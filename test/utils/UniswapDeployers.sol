@@ -108,4 +108,6 @@ abstract contract UniswapDeployers {
         deployPositionManager();
         deployRouter();
     }
+
+    function test() external virtual {}
 }

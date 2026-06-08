@@ -19,4 +19,6 @@ contract IndexFactoryScript is Script {
 
         vm.stopBroadcast();
     }
+
+    function test() external {}
 }

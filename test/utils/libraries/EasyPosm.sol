@@ -200,4 +200,6 @@ library EasyPosm {
         (PoolKey memory key,) = posm.getPoolAndPositionInfo(tokenId);
         return (key.currency0, key.currency1);
     }
+
+    function test() external {}
 }
