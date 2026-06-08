@@ -81,6 +81,7 @@ interface IIndex {
         string calldata name,
         string calldata symbol,
         AssetConfig[] calldata assets,
+        uint256 initialShares,
         address defaultAdmin
     ) external;
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external;
