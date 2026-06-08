@@ -85,7 +85,7 @@ contract IndexTest is BaseTest {
         uint256 indexBalUsdtAfter = IERC20(usdt).balanceOf(address(index));
 
         uint256 userBalWethAfter = IERC20(weth).balanceOf(user);
-        uint256 userBalUsdtAfter= IERC20(usdt).balanceOf(user);
+        uint256 userBalUsdtAfter = IERC20(usdt).balanceOf(user);
 
         assertEq(IERC20(index).balanceOf(user), shares);
 
@@ -160,6 +160,180 @@ contract IndexTest is BaseTest {
 
         vm.prank(user);
         index.mint(shares, user);
+    }
+
+    // endregion
+
+    // region - Redeem -
+
+    function _beforeEachRedeem(uint256 shares) private returns (address user) {
+        user = makeAddr("user");
+
+        deal(weth, user, 1_000e18);
+        deal(usdt, user, 1_000_000e18);
+
+        vm.startPrank(user);
+
+        IERC20(weth).approve(address(index), type(uint256).max);
+        IERC20(usdt).approve(address(index), type(uint256).max);
+
+        vm.stopPrank();
+
+        vm.prank(user);
+        index.mint(shares, user);
+    }
+
+    function test_redeem(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        uint256 indexBalWethBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexBalUsdtBefore = IERC20(usdt).balanceOf(address(index));
+
+        uint256 userBalWethBefore = IERC20(weth).balanceOf(user);
+        uint256 userBalUsdtBefore = IERC20(usdt).balanceOf(user);
+
+        uint256 totalSupplyBefore = index.totalSupply();
+
+        AssetBalance[] memory assetBalances = index.toAssets(shares, Math.Rounding.Floor);
+        assertEq(assetBalances.length, index.getTokens().length, "All assets returned");
+
+        uint256[] memory minAmountsOut = new uint256[](2);
+        minAmountsOut[0] = 0;
+        minAmountsOut[1] = 0;
+
+        vm.prank(user);
+        index.redeem(shares, user, minAmountsOut);
+
+        uint256 indexBalWethAfter = IERC20(weth).balanceOf(address(index));
+        uint256 indexBalUsdtAfter = IERC20(usdt).balanceOf(address(index));
+
+        uint256 userBalWethAfter = IERC20(weth).balanceOf(user);
+        uint256 userBalUsdtAfter = IERC20(usdt).balanceOf(user);
+
+        assertEq(IERC20(index).balanceOf(user), 0);
+
+        for (uint256 i = 0; i < assetBalances.length; i++) {
+            AssetBalance memory assetBalance = assetBalances[i];
+
+            if (assetBalance.token == weth) {
+                assertEq(assetBalance.amount, indexBalWethBefore -indexBalWethAfter);
+                assertEq(assetBalance.amount, userBalWethAfter - userBalWethBefore);
+            }
+
+            if (assetBalance.token == usdt) {
+                assertEq(assetBalance.amount, indexBalUsdtBefore - indexBalUsdtAfter);
+                assertEq(assetBalance.amount, userBalUsdtAfter - userBalUsdtBefore);
+            }
+        }
+
+        assertEq(index.totalSupply(), totalSupplyBefore - shares);
+    }
+
+    function test_redeem_emitTransfer(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        uint256[] memory minAmountsOut = new uint256[](2);
+
+        vm.expectEmit(true, true, true, true, address(index));
+        emit IERC20.Transfer(user, address(0), shares);
+
+        vm.prank(user);
+        index.redeem(shares, user, minAmountsOut);
+    }
+
+    function test_redeem_revertIfSharesIsZero() external {
+        address user = _beforeEachRedeem(1e18);
+
+        uint256[] memory minAmountsOut = new uint256[](2);
+
+        vm.expectRevert(ZeroAmount.selector);
+
+        vm.prank(user);
+        index.redeem(0, user, minAmountsOut);
+    }
+
+    function test_redeem_revertIfReceiverIsZero(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        uint256[] memory minAmountsOut = new uint256[](2);
+
+        vm.expectRevert(IIndex.InvalidReceiver.selector);
+
+        vm.prank(user);
+        index.redeem(shares, address(0), minAmountsOut);
+    }
+
+    function test_redeem_revertIfReceiverIsIndex(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        uint256[] memory minAmountsOut = new uint256[](2);
+
+        vm.expectRevert(IIndex.InvalidReceiver.selector);
+
+        vm.prank(user);
+        index.redeem(shares, address(index), minAmountsOut);
+    }
+
+    function test_redeem_revertIfMinAmountsOutLengthMismatch(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        // Index has 2 assets — pass length 1 to trigger mismatch.
+        uint256[] memory minAmountsOut = new uint256[](1);
+
+        vm.expectRevert(IIndex.InvalidNumberOfMinAmountsOut.selector);
+
+        vm.prank(user);
+        index.redeem(shares, user, minAmountsOut);
+    }
+
+    function test_redeem_revertOnInsufficientAmountOut(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        AssetBalance[] memory assetBalances = index.toAssets(shares, Math.Rounding.Floor);
+
+        // Demand 1 more than what redeem would give for the first asset → slippage trigger.
+        uint256[] memory minAmountsOut = new uint256[](2);
+        minAmountsOut[0] = assetBalances[0].amount + 1;
+        minAmountsOut[1] = 0;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IIndex.InsufficientAmountOut.selector,
+                assetBalances[0].token,
+                assetBalances[0].amount,
+                assetBalances[0].amount + 1
+            )
+        );
+
+        vm.prank(user);
+        index.redeem(shares, user, minAmountsOut);
+    }
+
+    function test_redeem_revertWhenJitActive(uint256 shares) external {
+        shares = bound(shares, 1, 1_000e18);
+
+        address user = _beforeEachRedeem(shares);
+
+        index.lendAssets(weth, 1e18, usdt, 1);
+
+        uint256[] memory minAmountsOut = new uint256[](2);
+
+        vm.expectRevert(IIndex.JitIsActive.selector);
+
+        vm.prank(user);
+        index.redeem(shares, user, minAmountsOut);
     }
 
     // endregion
