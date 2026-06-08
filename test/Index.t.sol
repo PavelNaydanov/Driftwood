@@ -7,9 +7,10 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 
 import {Index, AssetConfig, JitDebt} from "src/Index.sol";
 import {IIndex, AssetBalance} from "src/interfaces/IIndex.sol";
-import {ZeroAmount} from "src/utils/CommonErrors.sol";
+import {ZeroAmount, ZeroAddress} from "src/utils/CommonErrors.sol";
 
 import {BaseTest} from "./utils/BaseTest.sol";
+import {MockAggregator} from "./mocks/MockAggregator.sol";
 
 contract IndexTest is BaseTest {
     using SafeERC20 for IERC20;
@@ -491,6 +492,95 @@ contract IndexTest is BaseTest {
 
         vm.prank(borrower);
         index.lendAssets(weth, amount0, usdt, amount1);
+    }
+
+    // endregion
+
+    // region - Set oracle config -
+
+    function test_setOracleConfig(uint32 maxPriceStaleness) external {
+        vm.assume(maxPriceStaleness != 0);
+
+        uint8 dataFeedDecimals = 10;
+        MockAggregator dataFeed = new MockAggregator(dataFeedDecimals, 3000e8);
+        uint16 targetBpsBefore = index.getAsset(usdt).targetWeightBps;
+        uint16 toleranceBpsBefore = index.getAsset(usdt).toleranceBps;
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(dataFeed), maxPriceStaleness);
+
+        assertEq(index.getAsset(usdt).dataFeed, address(dataFeed));
+        assertEq(index.getAsset(usdt).feedDecimals, dataFeedDecimals);
+        assertEq(index.getAsset(usdt).maxPriceStaleness, maxPriceStaleness);
+
+        assertEq(index.getAsset(usdt).targetWeightBps, targetBpsBefore);
+        assertEq(index.getAsset(usdt).toleranceBps, toleranceBpsBefore);
+    }
+
+    function test_setOracleConfig_emitOracleConfigSet(uint32 maxPriceStaleness) external {
+        MockAggregator dataFeed = new MockAggregator(8, 3000e8);
+        vm.assume(maxPriceStaleness != 0);
+
+        vm.expectEmit(true, true, true, true, address(index));
+        emit IIndex.OracleConfigSet(usdt, address(dataFeed), maxPriceStaleness);
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(dataFeed), maxPriceStaleness);
+    }
+
+    function test_setOracleConfig_revertIfNotDefaultAdmin(uint32 maxPriceStaleness) external {
+        MockAggregator dataFeed = new MockAggregator(8, 3000e8);
+        address notDefaultAdmin = makeAddr("notDefaultAdmin");
+
+        vm.assume(maxPriceStaleness != 0);
+
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, notDefaultAdmin, index.DEFAULT_ADMIN_ROLE()));
+
+        vm.prank(notDefaultAdmin);
+        index.setOracleConfig(usdt, address(dataFeed), maxPriceStaleness);
+    }
+
+    function test_setOracleConfig_revertWhenJitActive(uint32 maxPriceStaleness) external {
+        MockAggregator dataFeed = new MockAggregator(8, 3000e8);
+
+        vm.assume(maxPriceStaleness != 0);
+
+        index.lendAssets(weth, 1, usdt, 1);
+
+        vm.expectRevert(IIndex.JitIsActive.selector);
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(dataFeed), maxPriceStaleness);
+    }
+
+    function test_setOracleConfig_revertIfInvalidAsset(uint32 maxPriceStaleness) external {
+        MockAggregator dataFeed = new MockAggregator(8, 3000e8);
+        address invalidAsset = makeAddr("invalidAsset");
+
+        vm.assume(maxPriceStaleness != 0);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAsset.selector, invalidAsset));
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(invalidAsset, address(dataFeed), maxPriceStaleness);
+    }
+
+    function test_setOracleConfig_revertIfDataFeedZero(uint32 maxPriceStaleness) external {
+        vm.assume(maxPriceStaleness != 0);
+
+        vm.expectRevert(ZeroAddress.selector);
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(0), maxPriceStaleness);
+    }
+
+    function test_setOracleConfig_revertIfMaxPriceStalenessZero() external {
+        MockAggregator dataFeed = new MockAggregator(8, 3000e8);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidMaxPriceStaleness.selector, usdt));
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(dataFeed), 0);
     }
 
     // endregion
