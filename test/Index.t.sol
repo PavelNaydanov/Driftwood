@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 import {Index, AssetConfig, JitDebt} from "src/Index.sol";
 import {IIndex, AssetBalance, AssetWeight} from "src/interfaces/IIndex.sol";
@@ -11,6 +12,7 @@ import {ZeroAmount, ZeroAddress} from "src/utils/CommonErrors.sol";
 
 import {BaseTest} from "./utils/BaseTest.sol";
 import {MockAggregator} from "./mocks/MockAggregator.sol";
+import {MockERC20} from "./mocks/MockERC20.sol";
 
 contract IndexTest is BaseTest {
     using SafeERC20 for IERC20;
@@ -44,6 +46,127 @@ contract IndexTest is BaseTest {
             assertEq(index.getAsset(tokens[i]).maxPriceStaleness, assetConfigs[i].maxPriceStaleness);
             assertEq(IERC20(tokens[i]).balanceOf(address(index)), assetConfigs[i].amount, "Invalid asset amount");
         }
+    }
+
+    function test_deploy_revertIfLessThanTwoAssets() external {
+        Index newIndex = Index(Clones.clone(address(new Index())));
+
+        AssetConfig[] memory configs = new AssetConfig[](1);
+        configs[0] = AssetConfig({
+            token: usdt,
+            amount: 1e15,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
+            targetWeightBps: 10000,
+            toleranceBps: 500
+        });
+
+        vm.expectRevert(IIndex.InvalidNumberOfAssets.selector);
+        newIndex.initialize("Test", "TST", configs, INITIAL_SHARES, defaultAdmin);
+    }
+
+    function test_deploy_revertIfTokenIsZero() external {
+        Index newIndex = Index(Clones.clone(address(new Index())));
+
+        AssetConfig[] memory configs = new AssetConfig[](2);
+        configs[0] = AssetConfig({
+            token: address(0),
+            amount: 1e15,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+        configs[1] = AssetConfig({
+            token: weth,
+            amount: 1e24,
+            dataFeed: ethFeed,
+            maxPriceStaleness: 3600,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+
+        vm.expectRevert(ZeroAddress.selector);
+        newIndex.initialize("Test", "TST", configs, INITIAL_SHARES, defaultAdmin);
+    }
+
+    function test_deploy_revertIfAmountIsZero() external {
+        Index newIndex = Index(Clones.clone(address(new Index())));
+
+        AssetConfig[] memory configs = new AssetConfig[](2);
+        configs[0] = AssetConfig({
+            token: usdt,
+            amount: 0,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+        configs[1] = AssetConfig({
+            token: weth,
+            amount: 1e24,
+            dataFeed: ethFeed,
+            maxPriceStaleness: 3600,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+
+        vm.expectRevert(ZeroAmount.selector);
+        newIndex.initialize("Test", "TST", configs, INITIAL_SHARES, defaultAdmin);
+    }
+
+    function test_deploy_revertIfAssetBalanceMismatch() external {
+        Index newIndex = Index(Clones.clone(address(new Index())));
+
+        AssetConfig[] memory configs = new AssetConfig[](2);
+        configs[0] = AssetConfig({
+            token: usdt,
+            amount: 1e15,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+        configs[1] = AssetConfig({
+            token: weth,
+            amount: 1e24,
+            dataFeed: ethFeed,
+            maxPriceStaleness: 3600,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+
+        // No transfer to newIndex → balance == 0, doesn't match expected amount.
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAssetAmount.selector, usdt, 1e15));
+        newIndex.initialize("Test", "TST", configs, INITIAL_SHARES, defaultAdmin);
+    }
+
+    function test_deploy_revertIfInvalidTotalWeight() external {
+        Index newIndex = Index(Clones.clone(address(new Index())));
+
+        AssetConfig[] memory configs = new AssetConfig[](2);
+        configs[0] = AssetConfig({
+            token: usdt,
+            amount: 1e15,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
+            targetWeightBps: 4000, // sum = 4000 + 5000 = 9000 != MAX_BPS
+            toleranceBps: 500
+        });
+        configs[1] = AssetConfig({
+            token: weth,
+            amount: 1e24,
+            dataFeed: ethFeed,
+            maxPriceStaleness: 3600,
+            targetWeightBps: 5000,
+            toleranceBps: 500
+        });
+
+        deal(usdt, address(newIndex), 1e15);
+        deal(weth, address(newIndex), 1e24);
+
+        vm.expectRevert(IIndex.InvalidTotalWeightBps.selector);
+        newIndex.initialize("Test", "TST", configs, INITIAL_SHARES, defaultAdmin);
     }
 
     // endregion
@@ -784,6 +907,71 @@ contract IndexTest is BaseTest {
 
         vm.expectRevert(abi.encodeWithSelector(IIndex.StalePrice.selector, weth));
         index.previewBoundsCheck(usdt, currentUsdtBal, weth, currentWethBal);
+    }
+
+    function test_previewBoundsCheck_withFeedDecimalsEqual18() external {
+        MockAggregator feed18 = new MockAggregator(18, 1e18);
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(feed18), 86400);
+
+        uint256 currentUsdtBal = IERC20(usdt).balanceOf(address(index));
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        assertTrue(index.previewBoundsCheck(usdt, currentUsdtBal, weth, currentWethBal));
+    }
+
+    function test_previewBoundsCheck_withFeedDecimalsAbove18() external {
+        MockAggregator feed20 = new MockAggregator(20, 1e20);
+
+        vm.prank(defaultAdmin);
+        index.setOracleConfig(usdt, address(feed20), 86400);
+
+        uint256 currentUsdtBal = IERC20(usdt).balanceOf(address(index));
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        assertTrue(index.previewBoundsCheck(usdt, currentUsdtBal, weth, currentWethBal));
+    }
+
+    function test_previewBoundsCheck_withThreeAssets() external {
+        address dai = address(new MockERC20(18));
+        MockAggregator daiFeed = new MockAggregator(8, 1e8);
+
+        AssetConfig[] memory configs = new AssetConfig[](3);
+        configs[0] = AssetConfig({
+            token: usdt,
+            amount: 1_000_000_000e6,
+            dataFeed: usdtFeed,
+            maxPriceStaleness: 86400,
+            targetWeightBps: 3333,
+            toleranceBps: 500
+        });
+        configs[1] = AssetConfig({
+            token: weth,
+            amount: 333_334e18,
+            dataFeed: ethFeed,
+            maxPriceStaleness: 3600,
+            targetWeightBps: 3333,
+            toleranceBps: 500
+        });
+        configs[2] = AssetConfig({
+            token: dai,
+            amount: 1_000_000_000e18,
+            dataFeed: address(daiFeed),
+            maxPriceStaleness: 86400,
+            targetWeightBps: 3334,
+            toleranceBps: 500
+        });
+
+        Index threeAssetIndex = Index(Clones.clone(address(new Index())));
+
+        deal(usdt, address(threeAssetIndex), 1_000_000_000e6);
+        deal(weth, address(threeAssetIndex), 333_334e18);
+        deal(dai, address(threeAssetIndex), 1_000_000_000e18);
+
+        threeAssetIndex.initialize("3A", "3A", configs, INITIAL_SHARES, defaultAdmin);
+
+        assertTrue(threeAssetIndex.previewBoundsCheck(usdt, 1_000_000_000e6, weth, 333_334e18));
     }
 
     // endregion
