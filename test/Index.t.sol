@@ -718,6 +718,76 @@ contract IndexTest is BaseTest {
 
     // endregion
 
+    // region - Preview Bounds Check -
+
+    function test_previewBoundsCheck_returnsTrueAtTarget() external view {
+        uint256 currentUsdtBal = IERC20(usdt).balanceOf(address(index));
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        assertTrue(index.previewBoundsCheck(usdt, currentUsdtBal, weth, currentWethBal));
+    }
+
+    function test_previewBoundsCheck_returnsTrueWithinTolerance() external view {
+        uint256 currentUsdtBal = IERC20(usdt).balanceOf(address(index));
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        assertTrue(index.previewBoundsCheck(usdt, currentUsdtBal * 105 / 100, weth, currentWethBal));
+    }
+
+    function test_previewBoundsCheck_returnsFalseAboveTolerance() external view {
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        assertFalse(index.previewBoundsCheck(usdt, 6_000_000_000e6, weth, currentWethBal));
+    }
+
+    function test_previewBoundsCheck_returnsFalseBelowTolerance() external view {
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        assertFalse(index.previewBoundsCheck(usdt, 1_000_000_000e6, weth, currentWethBal));
+    }
+
+    function test_previewBoundsCheck_returnsFalseOnZeroTotal() external view {
+        assertFalse(index.previewBoundsCheck(usdt, 0, weth, 0));
+    }
+
+    function test_previewBoundsCheck_revertIfSameAssets() external {
+        vm.expectRevert(IIndex.SameAssets.selector);
+        index.previewBoundsCheck(usdt, 1, usdt, 1);
+    }
+
+    function test_previewBoundsCheck_revertIfInvalidToken() external {
+        address invalidToken = makeAddr("invalidToken");
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAsset.selector, invalidToken));
+        index.previewBoundsCheck(invalidToken, 1, weth, 1);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAsset.selector, invalidToken));
+        index.previewBoundsCheck(usdt, 1, invalidToken, 1);
+    }
+
+    function test_previewBoundsCheck_revertOnInvalidPrice() external {
+        MockAggregator(ethFeed).setAnswer(0);
+
+        uint256 currentUsdtBal = IERC20(usdt).balanceOf(address(index));
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidPrice.selector, weth));
+        index.previewBoundsCheck(usdt, currentUsdtBal, weth, currentWethBal);
+    }
+
+    function test_previewBoundsCheck_revertOnStalePrice() external {
+        // Warp 2h forward — ETH (maxStaleness 1h) becomes stale, USDT (24h) stays fresh.
+        vm.warp(block.timestamp + 7200);
+
+        uint256 currentUsdtBal = IERC20(usdt).balanceOf(address(index));
+        uint256 currentWethBal = IERC20(weth).balanceOf(address(index));
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.StalePrice.selector, weth));
+        index.previewBoundsCheck(usdt, currentUsdtBal, weth, currentWethBal);
+    }
+
+    // endregion
+
     // region - Collect Assets -
 
     function _beforeEachCollectAssets(uint256 amount0, uint256 amount1) private returns (address borrower) {
