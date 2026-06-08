@@ -25,6 +25,7 @@ contract IndexFactory is IIndexFactory {
         string calldata name,
         string calldata symbol,
         AssetConfig[] calldata assets,
+        uint256 initialShares,
         address defaultAdmin
     ) external returns (address index) {
         index = Clones.clone(_indexImplementation);
@@ -43,7 +44,7 @@ contract IndexFactory is IIndexFactory {
             IERC20(asset.token).safeTransferFrom(msg.sender, index, asset.amount);
         }
 
-        IIndex(index).initialize(name, symbol, assets, defaultAdmin);
+        IIndex(index).initialize(name, symbol, assets, initialShares, defaultAdmin);
 
         emit IndexCreated(index, name, symbol);
     }

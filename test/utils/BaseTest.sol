@@ -30,6 +30,10 @@ abstract contract BaseTest is Test, UniswapDeployers {
     using EasyPosm for IPositionManager;
     using CurrencyLibrary for Currency;
 
+    uint256 constant public INITIAL_WETH_AMOUNT = 1_000_000e18;
+    uint256 constant public INITIAL_USDT_AMOUNT = 3_000_000_000e6;
+    uint256 constant public INITIAL_SHARES = 6_000_000_000e18; // 1 shares = $1 based on INITIAL_WETH_AMOUNT and INITIAL_USDT_AMOUNT
+
     address public usdtFeed;
     address public ethFeed;
 
@@ -139,7 +143,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
             IERC20(asset.token).safeTransfer(address(createdIndex), asset.amount);
         }
 
-        createdIndex.initialize("Test Index", "TSTIDX", assetConfigs, defaultAdmin);
+        createdIndex.initialize("Test Index", "TSTIDX", assetConfigs, INITIAL_SHARES, defaultAdmin);
     }
 
     function _deployTokens() internal returns (address[] memory tokens) {
@@ -166,7 +170,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
         assetConfigs = new AssetConfig[](2);
         assetConfigs[0] = AssetConfig({
             token: usdt,
-            amount: 3_000_000_000e6,
+            amount: INITIAL_USDT_AMOUNT,
             dataFeed: usdtFeed,
             maxPriceStaleness: 86400,
             targetWeightBps: 5_000, // 50%
@@ -175,7 +179,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
         assetConfigs[1] = AssetConfig({
             token: weth,
-            amount: 1_000_000e18,
+            amount: INITIAL_WETH_AMOUNT,
             dataFeed: ethFeed,
             maxPriceStaleness: 3600,
             targetWeightBps: 5_000, // 50%

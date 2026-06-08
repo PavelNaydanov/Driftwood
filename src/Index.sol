@@ -44,6 +44,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         string calldata name,
         string calldata symbol,
         AssetConfig[] calldata assetConfigs,
+        uint256 initialShares,
         address defaultAdmin
     ) external initializer {
         __ERC20_init(name, symbol);
@@ -51,6 +52,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         _initAssets(assetConfigs);
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
+        _mint(defaultAdmin, initialShares);
     }
 
     function mint(uint256 shares, address receiver) external whenJitInactive {
@@ -171,6 +173,10 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     function getJitDebt() external view returns (JitDebt memory) {
         return _jitDebt;
+    }
+
+    function toAssets(uint256 shares, Math.Rounding rounding) external view returns (AssetBalance[] memory assetBalances) {
+        return _toAssets(shares, rounding);
     }
 
     function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
