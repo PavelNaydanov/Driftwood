@@ -2,6 +2,6 @@
 pragma solidity 0.8.35;
 
 interface IIndexFactory {
-    event IndexCreated(address indexed index, string name, string symbol);
+    event IndexCreated(address index, string name, string symbol);
     // TODO: add interface
 }
