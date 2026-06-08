@@ -107,19 +107,16 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) whenJitInactive {
-        if (token0 == address(0) || token1 == address(0)) {
-            revert ZeroAddress();
-        }
-        if (amount0 == 0 || amount1 == 0) {
-            revert ZeroAmount();
-        }
-
         if (!_tokenSet.contains(token0)) {
             revert InvalidAsset(token0);
         }
 
         if (!_tokenSet.contains(token1)) {
             revert InvalidAsset(token1);
+        }
+
+        if (amount0 == 0 || amount1 == 0) {
+            revert ZeroAmount();
         }
 
         uint256 balance0 = IERC20(token0).balanceOf(address(this));

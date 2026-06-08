@@ -3,8 +3,9 @@ pragma solidity ^0.8.13;
 
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {Index, AssetConfig} from "src/Index.sol";
+import {Index, AssetConfig, JitDebt} from "src/Index.sol";
 import {IIndex, AssetBalance} from "src/interfaces/IIndex.sol";
 import {ZeroAmount} from "src/utils/CommonErrors.sol";
 
@@ -334,6 +335,162 @@ contract IndexTest is BaseTest {
 
         vm.prank(user);
         index.redeem(shares, user, minAmountsOut);
+    }
+
+    // endregion
+
+    // region - Lend assets -
+
+    function _beforeEachLendAssets() private returns (address borrower) {
+        borrower = makeAddr("borrower");
+        bytes32 hookRole = index.HOOK_ROLE();
+
+        vm.prank(defaultAdmin);
+        index.grantRole(hookRole, borrower);
+    }
+
+    function test_lendAssets(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
+
+        assertEq(IERC20(weth).balanceOf(borrower), amount0);
+        assertEq(IERC20(usdt).balanceOf(borrower), amount1);
+
+        assertEq(IERC20(weth).balanceOf(address(index)), indexWethBalBefore - amount0);
+        assertEq(IERC20(usdt).balanceOf(address(index)), indexUsdtBalBefore - amount1);
+
+        JitDebt memory debt = index.getJitDebt();
+        assertEq(debt.token0, weth);
+        assertEq(debt.token1, usdt);
+        assertEq(debt.hook, borrower);
+    }
+
+    function test_lendAssets_emitAssetsLent(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.expectEmit(true, true, true, true);
+        emit IIndex.AssetsLent(borrower, weth, amount0, indexWethBalBefore, usdt, amount1, indexUsdtBalBefore);
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
+    }
+
+    function test_lendAssets_revertIfInvalidAsset(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+        address invalidToken = makeAddr("invalidToken");
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAsset.selector, invalidToken));
+
+        vm.prank(borrower);
+        index.lendAssets(invalidToken, amount0, usdt, amount1);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InvalidAsset.selector, invalidToken));
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, invalidToken, amount1);
+    }
+
+    function test_lendAssets_revertIfZeroAmount(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.expectRevert(ZeroAmount.selector);
+
+        vm.prank(borrower);
+        index.lendAssets(weth, 0, usdt, amount1);
+
+        vm.expectRevert(ZeroAmount.selector);
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, 0);
+    }
+
+    function test_lendAssets_revertIfInsufficientAssetBalance0(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, indexWethBalBefore + 1, type(uint128).max);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InsufficientAssetBalance.selector, weth, amount0));
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
+    }
+
+    function test_lendAssets_revertIfInsufficientAssetBalance1(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, indexUsdtBalBefore + 1, type(uint128).max);
+
+        vm.expectRevert(abi.encodeWithSelector(IIndex.InsufficientAssetBalance.selector, usdt, amount1));
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
+    }
+
+    function test_lendAssets_revertIfNotHook(uint256 amount0, uint256 amount1) external {
+        address notHook = makeAddr("notHook");
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, notHook, index.HOOK_ROLE()));
+
+        vm.prank(notHook);
+        index.lendAssets(weth, amount0, usdt, amount1);
+    }
+
+    function test_lendAssets_revertWhenJitActive(uint256 amount0, uint256 amount1) external {
+        address borrower = _beforeEachLendAssets();
+
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
+
+        vm.expectRevert(IIndex.JitIsActive.selector);
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
     }
 
     // endregion
