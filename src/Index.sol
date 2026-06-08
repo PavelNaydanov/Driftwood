@@ -137,12 +137,10 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         emit AssetsLent(msg.sender, token0, amount0, balance0, token1, amount1, balance1);
     }
 
-    function collectAssets(address token0, address token1) external onlyRole(HOOK_ROLE) whenJitActive {
+    function collectAssets() external onlyRole(HOOK_ROLE) whenJitActive {
         JitDebt memory jitDebt = _jitDebt;
-
-        if (token0 != jitDebt.token0 || token1 != jitDebt.token1) {
-            revert TokensMismatch();
-        }
+        address token0 = jitDebt.token0;
+        address token1 = jitDebt.token1;
 
         if (msg.sender != jitDebt.hook) {
             revert InvalidCollector();

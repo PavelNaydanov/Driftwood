@@ -254,7 +254,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         IERC20(token0).safeTransfer(_index, IERC20(token0).balanceOf(address(this)));
         IERC20(token1).safeTransfer(_index, IERC20(token1).balanceOf(address(this)));
 
-        IIndex(_index).collectAssets(token0, token1);
+        IIndex(_index).collectAssets();
     }
 
     /// @dev Mirrors v4-core LiquidityAmounts.getAmountsForLiquidity

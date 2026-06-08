@@ -497,18 +497,109 @@ contract IndexTest is BaseTest {
 
     // region - Collect Assets -
 
+    function _beforeEachCollectAssets(uint256 amount0, uint256 amount1) private returns (address borrower) {
+        borrower = _beforeEachLendAssets();
+
+        vm.prank(borrower);
+        index.lendAssets(weth, amount0, usdt, amount1);
+
+        vm.startPrank(borrower);
+        IERC20(weth).transfer(address(index), amount0);
+        IERC20(usdt).transfer(address(index), amount1);
+        vm.stopPrank();
+    }
+
+    function test_collectAssets(uint256 amount0, uint256 amount1) external {
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        address borrower = _beforeEachCollectAssets(amount0, amount1);
+
+        vm.prank(borrower);
+        index.collectAssets();
+
+        JitDebt memory debt = index.getJitDebt();
+        assertEq(debt.hook, address(0));
+        assertEq(debt.token0, address(0));
+        assertEq(debt.token1, address(0));
+
+        assertEq(IERC20(weth).balanceOf(address(index)), indexWethBalBefore);
+        assertEq(IERC20(usdt).balanceOf(address(index)), indexUsdtBalBefore);
+    }
+
+    function test_collectAssets_emitAssetsCollected(uint256 amount0, uint256 amount1) external {
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        address borrower = _beforeEachCollectAssets(amount0, amount1);
+
+        vm.expectEmit(true, true, true, true, address(index));
+        emit IIndex.AssetsCollected(borrower, weth, indexWethBalBefore, usdt, indexUsdtBalBefore);
+
+        vm.prank(borrower);
+        index.collectAssets();
+    }
+
+    function test_collectAssets_revertIfNotHook() external {
+        address notHook = makeAddr("notHook");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, notHook, index.HOOK_ROLE())
+        );
+
+        vm.prank(notHook);
+        index.collectAssets();
+    }
+
+    function test_collectAssets_revertWhenJitInactive() external {
+        address borrower = _beforeEachLendAssets();
+
+        vm.expectRevert(IIndex.JitIsNotActive.selector);
+
+        vm.prank(borrower);
+        index.collectAssets();
+    }
+
+    function test_collectAssets_revertIfInvalidCollector(uint256 amount0, uint256 amount1) external {
+        uint256 indexWethBalBefore = IERC20(weth).balanceOf(address(index));
+        uint256 indexUsdtBalBefore = IERC20(usdt).balanceOf(address(index));
+
+        amount0 = bound(amount0, 1, indexWethBalBefore);
+        amount1 = bound(amount1, 1, indexUsdtBalBefore);
+
+        _beforeEachCollectAssets(amount0, amount1);
+
+        address otherBorrower = makeAddr("otherBorrower");
+        bytes32 hookRole = index.HOOK_ROLE();
+
+        vm.prank(defaultAdmin);
+        index.grantRole(hookRole, otherBorrower);
+
+        vm.expectRevert(IIndex.InvalidCollector.selector);
+
+        vm.prank(otherBorrower);
+        index.collectAssets();
+    }
+
     function test_collectAssets_revertsOnWeightOutOfBounds() external {
+        address borrower = _beforeEachLendAssets();
+
+        vm.prank(borrower);
         index.lendAssets(weth, 200_000e18, usdt, 1);
 
-        // Don't transfer anything back. collectAssets must revert via Variant B assertion.
-        try index.collectAssets(weth, usdt) {
+        vm.prank(borrower);
+        try index.collectAssets() {
             assertTrue(false, "Expected revert but collectAssets succeeded");
         } catch (bytes memory err) {
             _assertRevertContainsSelector(err, IIndex.WeightOutOfBounds.selector);
         }
     }
-
-    // TODO: continue
 
     // endregion
 }

@@ -62,7 +62,6 @@ interface IIndex {
     error InsufficientAmountOut(address token, uint256 amountOut, uint256 minAmountOut);
     error InvalidAssetAmount(address token, uint256 amount);
     error SameAssets();
-    error TokensMismatch();
     error InvalidAsset(address token);
     error InsufficientAssetBalance(address token, uint256 amount);
     error JitIsActive();
@@ -85,7 +84,7 @@ interface IIndex {
         address defaultAdmin
     ) external;
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external;
-    function collectAssets(address token0, address token1) external;
+    function collectAssets() external;
     function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
         external
         view
