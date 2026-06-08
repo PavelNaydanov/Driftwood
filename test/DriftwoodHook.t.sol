@@ -7,6 +7,11 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+
 import {Index, JitDebt} from "src/Index.sol";
 import {IIndex} from "src/interfaces/IIndex.sol";
 import {DriftwoodHook} from "src/DriftwoodHook.sol";
@@ -40,6 +45,14 @@ contract DriftwoodHookTest is BaseTest {
     function test_deploy() external view {
         assertNotEq(address(hook), address(0), "Hook should be deployed");
         assertEq(address(hook.poolManager()), address(poolManager));
+    }
+
+    function test_deploy_revertIfZeroIndex() external {
+        address flags = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x5555 << 144));
+        bytes memory constructorArgs = abi.encode(poolManager, address(0));
+
+        vm.expectRevert(ZeroAddress.selector);
+        deployCodeTo("DriftwoodHook.sol:DriftwoodHook", constructorArgs, flags);
     }
 
     // endregion
@@ -201,6 +214,101 @@ contract DriftwoodHookTest is BaseTest {
         } catch (bytes memory err) {
             _assertRevertContainsSelector(err, IIndex.InvalidPrice.selector);
         }
+    }
+
+    function test_swap_skipsJitOnEmptyIndex() external {
+        // Drain index balances to zero. getLiquidityForAmounts returns 0 → early return in _beforeSwap.
+        deal(weth, address(index), 0);
+        deal(usdt, address(index), 0);
+
+        // Swap should still go through native LP, just without JIT.
+        swapRouter.swapExactTokensForTokens({
+            amountIn: 1e18,
+            amountOutMin: 0,
+            zeroForOne: true,
+            poolKey: poolKey,
+            hookData: new bytes(0),
+            receiver: address(this),
+            deadline: block.timestamp + 1
+        });
+
+        // No JIT happened — index is still empty, no active position, no debt.
+        assertEq(IERC20(weth).balanceOf(address(index)), 0, "Index WETH stays empty");
+        assertEq(IERC20(usdt).balanceOf(address(index)), 0, "Index USDT stays empty");
+
+        ActivePosition memory pos = hook.getActivePosition(poolKey.toId());
+        assertEq(pos.liquidity, 0, "No JIT position");
+
+        JitDebt memory debt = index.getJitDebt();
+        assertEq(debt.hook, address(0), "JitDebt unset");
+
+        assertEq(IERC20(weth).balanceOf(address(hook)), 0, "Hook holds no WETH");
+        assertEq(IERC20(usdt).balanceOf(address(hook)), 0, "Hook holds no USDT");
+    }
+
+    function test_swap_atTickBoundary() external {
+        // Parallel pool with same hook but different fee for unique PoolKey.
+        // Initialize at tick 0 — exactly on the 60-grid → triggers boundary case in _prepareSimulation:
+        //   - Direction-aware shift body (currentTick == tickLower → tickLower -= tickSpacing).
+        //   - Else branch in _getAmountsForLiquidity (sqrtPriceX96 == sqrtPriceUpperX96 after shift).
+        PoolKey memory alignedKey = PoolKey({
+            currency0: poolKey.currency0,
+            currency1: poolKey.currency1,
+            fee: 500,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+
+        poolManager.initialize(alignedKey, TickMath.getSqrtPriceAtTick(0));
+
+        address inputToken = Currency.unwrap(alignedKey.currency0);
+        deal(inputToken, address(this), 1e15);
+
+        // Small zeroForOne swap — coverage of the boundary-case code path is the goal.
+        swapRouter.swapExactTokensForTokens({
+            amountIn: 1e15,
+            amountOutMin: 0,
+            zeroForOne: true,
+            poolKey: alignedKey,
+            hookData: new bytes(0),
+            receiver: address(this),
+            deadline: block.timestamp + 1
+        });
+    }
+
+    function test_swap_oneForZeroJitFires() external {
+        // OneForZero (USDT → WETH) swap exercises the else branch in _getAmountsForLiquidity
+        // when sqrtPriceNext reaches the upper boundary of the hook's range.
+        // Also covers the oneForZero code path in _prepareSimulation / _simulateHookBalances.
+        uint256 amountIn = 100_000e6; // 100k USDT — pushes price up significantly
+        deal(usdt, address(this), amountIn);
+
+        uint256 indexBal0Before = IERC20(weth).balanceOf(address(index));
+        uint256 indexBal1Before = IERC20(usdt).balanceOf(address(index));
+
+        swapRouter.swapExactTokensForTokens({
+            amountIn: amountIn,
+            amountOutMin: 0,
+            zeroForOne: false,
+            poolKey: poolKey,
+            hookData: new bytes(0),
+            receiver: address(this),
+            deadline: block.timestamp + 1
+        });
+
+        // OneForZero: trader puts USDT, gets WETH. Index gains USDT, loses WETH.
+        assertGt(IERC20(usdt).balanceOf(address(index)), indexBal1Before, "Index should gain USDT");
+        assertLt(IERC20(weth).balanceOf(address(index)), indexBal0Before, "Index should lose WETH");
+
+        // Hook cleanup
+        ActivePosition memory pos = hook.getActivePosition(poolKey.toId());
+        assertEq(pos.liquidity, 0, "Position cleared");
+
+        assertEq(IERC20(weth).balanceOf(address(hook)), 0, "Hook retains no WETH");
+        assertEq(IERC20(usdt).balanceOf(address(hook)), 0, "Hook retains no USDT");
+
+        JitDebt memory debt = index.getJitDebt();
+        assertEq(debt.hook, address(0), "JIT debt cleared");
     }
 
     function test_swap_revertsOnAssertion() external {
