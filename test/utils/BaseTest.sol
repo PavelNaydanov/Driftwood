@@ -30,9 +30,9 @@ abstract contract BaseTest is Test, UniswapDeployers {
     using EasyPosm for IPositionManager;
     using CurrencyLibrary for Currency;
 
-    uint256 constant public INITIAL_WETH_AMOUNT = 1_000_000e18;
-    uint256 constant public INITIAL_USDT_AMOUNT = 3_000_000_000e6;
-    uint256 constant public INITIAL_SHARES = 6_000_000_000e18; // 1 shares = $1 based on INITIAL_WETH_AMOUNT and INITIAL_USDT_AMOUNT
+    uint256 public constant INITIAL_WETH_AMOUNT = 1_000_000e18;
+    uint256 public constant INITIAL_USDT_AMOUNT = 3_000_000_000e6;
+    uint256 public constant INITIAL_SHARES = 6_000_000_000e18; // 1 shares = $1 based on INITIAL_WETH_AMOUNT and INITIAL_USDT_AMOUNT
 
     address public usdtFeed;
     address public ethFeed;
@@ -211,10 +211,7 @@ abstract contract BaseTest is Test, UniswapDeployers {
 
     /// @dev Asserts that `err` contains `selector` anywhere in its bytes.
     function _assertRevertContainsSelector(bytes memory err, bytes4 selector) internal pure {
-        assertTrue(
-            _revertContainsSelector(err, selector),
-            "Expected selector not found in revert data"
-        );
+        assertTrue(_revertContainsSelector(err, selector), "Expected selector not found in revert data");
     }
 
     function test() external override {}

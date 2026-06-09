@@ -68,7 +68,9 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         // hook deposits balance_i in beforeSwap and trader input is not yet settled.
         // Hook take amount equals (hookFinal_i - excess_i), which after cancelling
         // excess gives the simplified inequality below.
-        if (!_poolHasCapacityForTake(context.token0, context.token1, balance0, balance1, predictedReturn0, predictedReturn1)) {
+        if (!_poolHasCapacityForTake(
+                context.token0, context.token1, balance0, balance1, predictedReturn0, predictedReturn1
+            )) {
             return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 

@@ -123,7 +123,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     // region - Hook functions -
 
     /// @inheritdoc IIndex
-    function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) whenJitInactive {
+    function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1)
+        external
+        onlyRole(HOOK_ROLE)
+        whenJitInactive
+    {
         if (!_tokenSet.contains(token0)) {
             revert InvalidAsset(token0);
         }
@@ -181,7 +185,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     // region - Admin functions -
 
     /// @inheritdoc IIndex
-    function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
+    function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenJitInactive
+    {
         if (!_tokenSet.contains(token)) {
             revert InvalidAsset(token);
         }
@@ -192,7 +200,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     /// @inheritdoc IIndex
     /// @dev Caller responsible for no duplicates; if violated, sum invariant can drift.
-    function setAssetWeights(AssetWeight[] calldata assetWeights) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
+    function setAssetWeights(AssetWeight[] calldata assetWeights)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenJitInactive
+    {
         if (assetWeights.length != _tokenSet.length()) {
             revert IncompleteTokenSet();
         }
@@ -245,7 +257,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     /// @inheritdoc IIndex
-    function toAssets(uint256 shares, Math.Rounding rounding) external view returns (AssetBalance[] memory assetBalances) {
+    function toAssets(uint256 shares, Math.Rounding rounding)
+        external
+        view
+        returns (AssetBalance[] memory assetBalances)
+    {
         return _toAssets(shares, rounding);
     }
 
@@ -349,7 +365,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     /// @dev Math: amount[i] = mulDiv(shares, balance[i], totalSupply, rounding).
-    function _toAssets(uint256 shares, Math.Rounding rounding) private view returns (AssetBalance[] memory assetBalances) {
+    function _toAssets(uint256 shares, Math.Rounding rounding)
+        private
+        view
+        returns (AssetBalance[] memory assetBalances)
+    {
         uint256 numberOfAssets = _tokenSet.length();
         assetBalances = new AssetBalance[](numberOfAssets);
 
@@ -417,9 +437,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             uint256 actualBps = Math.mulDiv(values[i], MAX_BPS, total);
             uint16 targetBps = targets[i];
 
-            uint256 diff = actualBps > targetBps
-                ? actualBps - targetBps
-                : targetBps - actualBps;
+            uint256 diff = actualBps > targetBps ? actualBps - targetBps : targetBps - actualBps;
 
             if (diff > tolerances[i]) {
                 return false;
@@ -430,7 +448,11 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     /// @dev USD value of `balance`, normalized to 18 decimals.
-    function _snapshotUsdValue(address token, Asset memory asset, uint256 balance) private view returns (uint256 value) {
+    function _snapshotUsdValue(address token, Asset memory asset, uint256 balance)
+        private
+        view
+        returns (uint256 value)
+    {
         uint256 priceInUsd = _readPriceInUsd(token, asset);
 
         uint256 tokenUnit = 10 ** asset.tokenDecimals;

@@ -343,7 +343,7 @@ contract IndexTest is BaseTest {
             AssetBalance memory assetBalance = assetBalances[i];
 
             if (assetBalance.token == weth) {
-                assertEq(assetBalance.amount, indexBalWethBefore -indexBalWethAfter);
+                assertEq(assetBalance.amount, indexBalWethBefore - indexBalWethAfter);
                 assertEq(assetBalance.amount, userBalWethAfter - userBalWethBefore);
             }
 
@@ -593,7 +593,9 @@ contract IndexTest is BaseTest {
         amount0 = bound(amount0, 1, indexWethBalBefore);
         amount1 = bound(amount1, 1, indexUsdtBalBefore);
 
-        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, notHook, index.HOOK_ROLE()));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, notHook, index.HOOK_ROLE())
+        );
 
         vm.prank(notHook);
         index.lendAssets(weth, amount0, usdt, amount1);
@@ -657,7 +659,11 @@ contract IndexTest is BaseTest {
 
         vm.assume(maxPriceStaleness != 0);
 
-        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, notDefaultAdmin, index.DEFAULT_ADMIN_ROLE()));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, notDefaultAdmin, index.DEFAULT_ADMIN_ROLE()
+            )
+        );
 
         vm.prank(notDefaultAdmin);
         index.setOracleConfig(usdt, address(dataFeed), maxPriceStaleness);
@@ -710,12 +716,11 @@ contract IndexTest is BaseTest {
 
     // region - Set asset weights -
 
-    function _makeAssetWeights(
-        uint16 usdtTarget,
-        uint16 usdtTolerance,
-        uint16 wethTarget,
-        uint16 wethTolerance
-    ) private view returns (AssetWeight[] memory weights) {
+    function _makeAssetWeights(uint16 usdtTarget, uint16 usdtTolerance, uint16 wethTarget, uint16 wethTolerance)
+        private
+        view
+        returns (AssetWeight[] memory weights)
+    {
         weights = new AssetWeight[](2);
         weights[0] = AssetWeight({token: usdt, targetWeightBps: usdtTarget, toleranceBps: usdtTolerance});
         weights[1] = AssetWeight({token: weth, targetWeightBps: wethTarget, toleranceBps: wethTolerance});

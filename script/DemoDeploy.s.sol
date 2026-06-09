@@ -24,9 +24,9 @@ contract DemoDeployScript is Script {
     using SafeERC20 for IERC20;
     using PoolIdLibrary for PoolKey;
 
-    uint256 constant public INITIAL_WETH_AMOUNT = 1e18;
-    uint256 constant public INITIAL_USDT_AMOUNT = 3_000e6;
-    uint256 constant public INITIAL_SHARES = 6_000e18;
+    uint256 public constant INITIAL_WETH_AMOUNT = 1e18;
+    uint256 public constant INITIAL_USDT_AMOUNT = 3_000e6;
+    uint256 public constant INITIAL_SHARES = 6_000e18;
 
     address public indexImpl;
     IndexFactory public indexFactory;
@@ -72,7 +72,7 @@ contract DemoDeployScript is Script {
         bytes memory constructorArgs = abi.encode(poolManager, index);
 
         (address hookAddress, bytes32 salt) =
-        HookMiner.find(CREATE2_FACTORY, flags, type(DriftwoodHook).creationCode, constructorArgs);
+            HookMiner.find(CREATE2_FACTORY, flags, type(DriftwoodHook).creationCode, constructorArgs);
         hook = new DriftwoodHook{salt: salt}(IPoolManager(poolManager), index);
 
         require(address(hook) == hookAddress, "DemoDeploy: Hook Address Mismatch");
@@ -82,9 +82,8 @@ contract DemoDeployScript is Script {
         Index(index).grantRole(hookRole, address(hook));
 
         // Create the pool
-        PoolKey memory poolKey = PoolKey({
-            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(hook)
-        });
+        PoolKey memory poolKey =
+            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(hook)});
 
         uint160 sqrtPriceX96 = usdt > weth
             ? _encodeSqrtPriceX96(3000e6, 1e18)  // currency0=WETH, currency1=USDT
@@ -105,7 +104,11 @@ contract DemoDeployScript is Script {
         console.logBytes32(PoolId.unwrap(poolKey.toId()));
     }
 
-    function _generateAssetConfigs(address weth, address usdt, address ethFeed, address usdtFeed) private pure returns (AssetConfig[] memory assetConfigs) {
+    function _generateAssetConfigs(address weth, address usdt, address ethFeed, address usdtFeed)
+        private
+        pure
+        returns (AssetConfig[] memory assetConfigs)
+    {
         assetConfigs = new AssetConfig[](2);
 
         assetConfigs[0] = AssetConfig({

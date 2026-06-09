@@ -122,16 +122,8 @@ contract DriftwoodHookTest is BaseTest {
             deadline: block.timestamp + 1
         });
 
-        assertEq(
-            IERC20(weth).balanceOf(address(index)),
-            indexBal0Before,
-            "Index WETH must be unchanged (JIT skipped)"
-        );
-        assertEq(
-            IERC20(usdt).balanceOf(address(index)),
-            indexBal1Before,
-            "Index USDT must be unchanged (JIT skipped)"
-        );
+        assertEq(IERC20(weth).balanceOf(address(index)), indexBal0Before, "Index WETH must be unchanged (JIT skipped)");
+        assertEq(IERC20(usdt).balanceOf(address(index)), indexBal1Before, "Index USDT must be unchanged (JIT skipped)");
 
         ActivePosition memory pos = hook.getActivePosition(poolKey.toId());
         assertEq(pos.liquidity, 0, "No JIT position should be created");
