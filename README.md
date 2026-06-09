@@ -92,11 +92,42 @@ Driftwood filters toxic flow without auctions:
 - **Post-swap assertion.** `collectAssets` re-checks the weights on the actual balances. If the simulation diverged from reality (for example, the oracle price was swapped between `beforeSwap` and `afterSwap`) — revert.
 - **Single-flight JIT.** Only one JIT loan is active at a time; `mint`/`redeem` and admin setters are blocked while the loan is open.
 
+## Economics
+
+Two questions decide whether Driftwood is worth running: **how much yield** the idle reserves earn, and **how much** the rebalancing actually costs versus simply holding the basket. Both are answered end-to-end against the real hook — not in a spreadsheet, but by running [test/economics/Economics.t.sol](test/economics/Economics.t.sol) on the demo index (1M WETH + 3B USDT ≈ $6B TVL, 50/50 target, ±5% tolerance).
+
+```shell
+$ forge test -vvv --mp test/economics/Economics.t.sol
+```
+
+**Scenario 1 — yield from organic flow (flat market).**
+
+![Economics simulation](./images/test-economics-scenario-1.png)
+
+ETH starts and ends at \$3000, so the price move cancels out and every dollar of surplus is pure fee income. The reserves are lent as JIT liquidity for round-trip swap flow, and the index keeps its fee share on each one. Read the `Annualized yield` line together with `Daily volume / TVL`: because the demo pool's native liquidity is thin, the index captures almost the entire 0.3% fee, so yield is essentially **linear in volume** — double the volume routed through the pool and the APR roughly doubles. The `JIT cycles fired` and `Weights still in tolerance` lines confirm the capital was working the whole time and never drifted out of band.
+
+**Scenario 2 — rebalancing vs HODL (trending market).**
+
+![Economics simulation](./images/test-economics-scenario-2.png)
+
+ETH rises +20% to \$3600. A passive 50/50 basket would drift overweight WETH; here arbitrageurs buy the now-cheap WETH out of the pool, the index sells into that flow, and the position rebalances back toward its target — earning a fee on every trade. Compare three lines: `HODL value`, `Driftwood`, and `Fee income (valued @ $3000)`. The gap between Driftwood and HODL (`Driftwood vs HODL`) is the **bounded** rebalancing drift, capped by the ±5% tolerance, and the fee income is what offsets it. The headline: a traditional index protocol *pays* to rebalance (auctions, MEV, market makers) — Driftwood gets *paid* for the same work, and lands back on its 50/50 mandate (`WETH weight after`).
+
+The absolute numbers scale with the assumed volume and pool depth; the simulation is deterministic, so the figures in the screenshots are reproducible with the command above.
+
+## Limitations
+
+Driftwood is an MVP, and the same simulation that produces the numbers above also makes its boundaries explicit:
+
+- **JIT serves pool-sized flow.** The `_poolHasCapacityForTake` check skips the JIT when a swap is large relative to the pool's settle-able balance. This is a safety mechanism — an oversized swap simply routes through native liquidity without JIT — but it means the index earns nothing on very large trades.
+- **Fee capture depends on native pool depth.** The index receives `hookLiquidity / (hookLiquidity + nativeLiquidity)` of each fee. In a thin pool (as in the demo) this is close to 100%; in a pool with deep standing liquidity the index shares the fee proportionally, and the APR drops accordingly.
+- **Pool price vs oracle (LVR / adverse selection).** The JIT deploys liquidity at the *pool* price, while the weight check values the basket at the *Chainlink* price. The ±5% tolerance, the pre-swap simulation, and the post-swap assertion in `collectAssets` bound how far the composition can move and catch oracle divergence between `beforeSwap` and `afterSwap` — but they do not eliminate loss-versus-rebalancing: an informed trader still trades against the index right before a price move. A future mitigation is a dynamic fee that rises with volatility, compensating for LVR.
+- **One JIT loan at a time.** Only a single JIT cycle can be open per index at any moment, and `mint`/`redeem` together with admin setters are blocked while it is active (the `whenJitInactive` guard). This keeps accounting safe but serializes activity within a block. This could be relaxed in the future.
+
 ## Project status
 
 A working MVP. The JIT cycle runs end-to-end: the index lends liquidity, receives its share of the fee, and the composition stays within tolerance; on huge swaps the JIT is skipped, and on a broken oracle it reverts.
 
-83 tests (0 failed), 100% coverage of the production code in [Index.sol](src/Index.sol) and [DriftwoodHook.sol](src/DriftwoodHook.sol).
+87 tests (0 failed), 100% coverage of the code in [Index.sol](src/Index.sol) and [DriftwoodHook.sol](src/DriftwoodHook.sol).
 
 ![Test coverage](./images/test-coverage.png)
 
