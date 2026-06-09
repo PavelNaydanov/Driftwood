@@ -338,6 +338,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         uint256 numberOfTokens = _tokenSet.length();
         uint256[] memory values = new uint256[](numberOfTokens);
+        uint16[] memory targets = new uint16[](numberOfTokens);
+        uint16[] memory tolerances = new uint16[](numberOfTokens);
         uint256 total;
 
         for (uint256 i = 0; i < numberOfTokens; i++) {
@@ -352,9 +354,12 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
                 balance = IERC20(token).balanceOf(address(this));
             }
 
-            uint256 value = _snapshotUsdValue(token, balance);
+            Asset memory asset = _assets[token];
+            uint256 value = _snapshotUsdValue(token, asset, balance);
 
             values[i] = value;
+            targets[i] = asset.targetWeightBps;
+            tolerances[i] = asset.toleranceBps;
             total += value;
         }
 
@@ -363,16 +368,14 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
 
         for (uint256 i = 0; i < numberOfTokens; i++) {
-            Asset memory asset = _assets[_tokenSet.at(i)];
-
             uint256 actualBps = Math.mulDiv(values[i], MAX_BPS, total);
-            uint16 targetBps = asset.targetWeightBps;
+            uint16 targetBps = targets[i];
 
             uint256 diff = actualBps > targetBps
                 ? actualBps - targetBps
                 : targetBps - actualBps;
 
-            if (diff > asset.toleranceBps) {
+            if (diff > tolerances[i]) {
                 return false;
             }
         }
@@ -380,9 +383,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return true;
     }
 
-    function _snapshotUsdValue(address token, uint256 balance) private view returns (uint256 value) {
-        Asset memory asset = _assets[token];
-
+    function _snapshotUsdValue(address token, Asset memory asset, uint256 balance) private view returns (uint256 value) {
         uint256 priceInUsd = _readPriceInUsd(token, asset);
 
         uint256 tokenUnit = 10 ** asset.tokenDecimals;
