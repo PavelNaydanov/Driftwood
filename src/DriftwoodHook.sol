@@ -77,19 +77,16 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
         (uint256 predictedReturn0, uint256 predictedReturn1) = _simulateHookBalances(context, key.fee, params);
 
-        address token0 = Currency.unwrap(key.currency0);
-        address token1 = Currency.unwrap(key.currency1);
-
         // Ensure the pool will physically have enough balance to settle our take
         // in afterSwap. At take time the pool holds (poolBalance + balance_i), since
         // hook deposits balance_i in beforeSwap and trader input is not yet settled.
         // Hook take amount equals (hookFinal_i - excess_i), which after cancelling
         // excess gives the simplified inequality below.
-        if (!_poolHasCapacityForTake(token0, token1, balance0, balance1, predictedReturn0, predictedReturn1)) {
+        if (!_poolHasCapacityForTake(context.token0, context.token1, balance0, balance1, predictedReturn0, predictedReturn1)) {
             return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 
-        if (IIndex(_index).previewBoundsCheck(token0, predictedReturn0, token1, predictedReturn1)) {
+        if (IIndex(_index).previewBoundsCheck(context.token0, predictedReturn0, context.token1, predictedReturn1)) {
             _openJitPosition(key, context, balance0, balance1);
         }
 
@@ -118,6 +115,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         int24 currentTick;
         (context.sqrtPriceX96, currentTick,,) = poolManager.getSlot0(poolId);
         uint128 poolLiquidity = poolManager.getLiquidity(poolId);
+        address token0 = Currency.unwrap(key.currency0);
+        address token1 = Currency.unwrap(key.currency1);
 
         int24 tickLower = TickBitmap.compress(currentTick, key.tickSpacing) * key.tickSpacing;
         // Edge case: currentTick sits exactly on the lower grid boundary.
@@ -129,13 +128,15 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         }
         int24 tickUpper = tickLower + key.tickSpacing;
 
+        context.token0 = token0;
+        context.token1 = token1;
         context.tickLower = tickLower;
         context.tickUpper = tickUpper;
         context.sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(tickLower);
         context.sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(tickUpper);
 
-        balance0 = IERC20(Currency.unwrap(key.currency0)).balanceOf(_index);
-        balance1 = IERC20(Currency.unwrap(key.currency1)).balanceOf(_index);
+        balance0 = IERC20(token0).balanceOf(_index);
+        balance1 = IERC20(token1).balanceOf(_index);
 
         context.hookLiquidity = LiquidityAmounts.getLiquidityForAmounts(
             context.sqrtPriceX96, context.sqrtPriceLowerX96, context.sqrtPriceUpperX96, balance0, balance1
@@ -164,6 +165,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     ) private view returns (bool) {
         uint256 available0 = IERC20(token0).balanceOf(address(poolManager)) + balance0;
         uint256 available1 = IERC20(token1).balanceOf(address(poolManager)) + balance1;
+
         return predictedReturn0 <= available0 && predictedReturn1 <= available1;
     }
 
@@ -204,15 +206,19 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             return;
         }
 
-        address token0 = Currency.unwrap(key.currency0);
-        address token1 = Currency.unwrap(key.currency1);
-
+        // Create hook position in liquidity pool
         _activePositions[key.toId()] = ActivePosition({
-            tickLower: context.tickLower, tickUpper: context.tickUpper, liquidity: context.hookLiquidity
+            token0: context.token0,
+            token1: context.token1,
+            tickLower: context.tickLower,
+            tickUpper: context.tickUpper,
+            liquidity: context.hookLiquidity
         });
 
-        IIndex(_index).lendAssets(token0, balance0, token1, balance1);
+        // Lend assets from index
+        IIndex(_index).lendAssets(context.token0, balance0, context.token1, balance1);
 
+        // Add liquidity to the pool
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             key,
             ModifyLiquidityParams({
@@ -248,12 +254,10 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         // Clear active position
         delete _activePositions[key.toId()];
 
-        address token0 = Currency.unwrap(key.currency0);
-        address token1 = Currency.unwrap(key.currency1);
+        IERC20(pos.token0).safeTransfer(_index, IERC20(pos.token0).balanceOf(address(this)));
+        IERC20(pos.token1).safeTransfer(_index, IERC20(pos.token1).balanceOf(address(this)));
 
-        IERC20(token0).safeTransfer(_index, IERC20(token0).balanceOf(address(this)));
-        IERC20(token1).safeTransfer(_index, IERC20(token1).balanceOf(address(this)));
-
+        // Callback call to the index
         IIndex(_index).collectAssets();
     }
 
