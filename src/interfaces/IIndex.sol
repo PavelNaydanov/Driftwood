@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
 struct AssetConfig {
     address token;
     uint256 amount;
@@ -83,11 +85,18 @@ interface IIndex {
         uint256 initialShares,
         address defaultAdmin
     ) external;
+    function mint(uint256 shares, address receiver) external;
+    function redeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut) external;
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external;
     function collectAssets() external;
+    function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external;
+    function setAssetWeights(AssetWeight[] calldata assetWeights) external;
+    function getTokens() external view returns (address[] memory);
+    function getAsset(address token) external view returns (Asset memory);
+    function getJitDebt() external view returns (JitDebt memory);
+    function toAssets(uint256 shares, Math.Rounding rounding) external view returns (AssetBalance[] memory);
     function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
         external
         view
         returns (bool);
-    // TODO: add interface
 }

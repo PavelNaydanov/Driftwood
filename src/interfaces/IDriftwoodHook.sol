@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.35;
 
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+
 struct ActivePosition {
     address token0;
     address token1;
@@ -24,5 +26,5 @@ struct SimulationContext {
 }
 
 interface IDriftwoodHook {
-    // TODO: add interface
+    function getActivePosition(PoolId poolId) external view returns (ActivePosition memory);
 }
