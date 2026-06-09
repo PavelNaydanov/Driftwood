@@ -47,8 +47,10 @@ $ anvil
 
 ### Deploy
 
+**Demo deploy**
+
 ```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+$ forge script script/DemoDeploy.s.sol:DemoDeployScript --rpc-url base-sepolia --broadcast --sig "run(address)" "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408" --slow --verify -vvvv --interactives 1
 ```
 
 ### Cast
