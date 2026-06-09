@@ -985,8 +985,8 @@ contract IndexTest is BaseTest {
         index.lendAssets(weth, amount0, usdt, amount1);
 
         vm.startPrank(borrower);
-        IERC20(weth).transfer(address(index), amount0);
-        IERC20(usdt).transfer(address(index), amount1);
+        IERC20(weth).safeTransfer(address(index), amount0);
+        IERC20(usdt).safeTransfer(address(index), amount1);
         vm.stopPrank();
     }
 
