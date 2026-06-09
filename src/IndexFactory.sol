@@ -8,11 +8,14 @@ import {IIndexFactory} from "./interfaces/IIndexFactory.sol";
 import {IIndex, AssetConfig} from "./interfaces/IIndex.sol";
 import {ZeroAddress, ZeroAmount} from "./utils/CommonErrors.sol";
 
+/// @title IndexFactory
+/// @notice Deploys minimal-proxy Index clones and seeds them with the initial set of Assets.
 contract IndexFactory is IIndexFactory {
     using SafeERC20 for IERC20;
 
     address private _indexImplementation;
 
+    /// @param indexImplementation Logic contract used as the template for clones.
     constructor(address indexImplementation) {
         if (indexImplementation == address(0)) {
             revert ZeroAddress();
@@ -21,6 +24,7 @@ contract IndexFactory is IIndexFactory {
         _indexImplementation = indexImplementation;
     }
 
+    /// @inheritdoc IIndexFactory
     function createIndex(
         string calldata name,
         string calldata symbol,
@@ -49,6 +53,7 @@ contract IndexFactory is IIndexFactory {
         emit IndexCreated(index, name, symbol);
     }
 
+    /// @inheritdoc IIndexFactory
     function getIndexImplementation() external view returns (address) {
         return _indexImplementation;
     }

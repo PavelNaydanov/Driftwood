@@ -13,11 +13,16 @@ import {IIndex, AssetConfig, Asset, AssetBalance, AssetWeight, JitDebt} from "./
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {ZeroAddress, ZeroAmount} from "./utils/CommonErrors.sol";
 
+/// @title Index
+/// @notice ERC20-share index fund backed by a fixed set of tokens. Used by `DriftwoodHook`
+/// for JIT liquidity through `lendAssets`/`collectAssets`.
 contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    /// @notice Basis-point denominator (100% = 10_000).
     uint16 public constant MAX_BPS = 10_000;
+    /// @notice Role granted to the hook that may call `lendAssets`/`collectAssets`.
     bytes32 public constant HOOK_ROLE = keccak256("HOOK_ROLE");
 
     EnumerableSet.AddressSet private _tokenSet;
@@ -25,11 +30,13 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     JitDebt private _jitDebt;
 
+    /// @dev Reverts when there is no active JIT loan.
     modifier whenJitActive() {
         _checkJitActive();
         _;
     }
 
+    /// @dev Reverts while a JIT loan is open.
     modifier whenJitInactive() {
         _checkJitInactive();
         _;
@@ -40,6 +47,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _disableInitializers();
     }
 
+    /// @inheritdoc IIndex
     function initialize(
         string calldata name,
         string calldata symbol,
@@ -57,6 +65,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     // region - User functions -
 
+    /// @inheritdoc IIndex
     function mint(uint256 shares, address receiver) external whenJitInactive {
         if (shares == 0) {
             revert ZeroAmount();
@@ -78,6 +87,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _mint(receiver, shares);
     }
 
+    /// @inheritdoc IIndex
     function redeem(uint256 shares, address receiver, uint256[] calldata minAmountsOut) external whenJitInactive {
         if (shares == 0) {
             revert ZeroAmount();
@@ -112,6 +122,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     // region - Hook functions -
 
+    /// @inheritdoc IIndex
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) whenJitInactive {
         if (!_tokenSet.contains(token0)) {
             revert InvalidAsset(token0);
@@ -143,6 +154,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         emit AssetsLent(msg.sender, token0, amount0, balance0, token1, amount1, balance1);
     }
 
+    /// @inheritdoc IIndex
     function collectAssets() external onlyRole(HOOK_ROLE) whenJitActive {
         JitDebt memory jitDebt = _jitDebt;
         address token0 = jitDebt.token0;
@@ -168,6 +180,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     // region - Admin functions -
 
+    /// @inheritdoc IIndex
     function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
         if (!_tokenSet.contains(token)) {
             revert InvalidAsset(token);
@@ -177,7 +190,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _setOracleConfig(token, dataFeed, maxPriceStaleness);
     }
 
-    /// @dev Caller responsible for no duplicates; if violated, sum invariant can drift
+    /// @inheritdoc IIndex
+    /// @dev Caller responsible for no duplicates; if violated, sum invariant can drift.
     function setAssetWeights(AssetWeight[] calldata assetWeights) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
         if (assetWeights.length != _tokenSet.length()) {
             revert IncompleteTokenSet();
@@ -206,6 +220,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     // region - View functions -
 
+    /// @inheritdoc IIndex
     function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
         external
         view
@@ -214,18 +229,22 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return _previewBoundsCheck(token0, newBalance0, token1, newBalance1);
     }
 
+    /// @inheritdoc IIndex
     function getTokens() external view returns (address[] memory) {
         return _tokenSet.values();
     }
 
+    /// @inheritdoc IIndex
     function getAsset(address token) external view returns (Asset memory) {
         return _assets[token];
     }
 
+    /// @inheritdoc IIndex
     function getJitDebt() external view returns (JitDebt memory) {
         return _jitDebt;
     }
 
+    /// @inheritdoc IIndex
     function toAssets(uint256 shares, Math.Rounding rounding) external view returns (AssetBalance[] memory assetBalances) {
         return _toAssets(shares, rounding);
     }
@@ -234,6 +253,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
     // region - Internal functions -
 
+    /// @dev Validates and stores each asset in `assetConfigs`. Requires at least 2 assets,
+    /// exact balance match for each `amount`, and target weights summing to MAX_BPS.
     function _initAssets(AssetConfig[] memory assetConfigs) private {
         uint256 numberOfAssets = assetConfigs.length;
         if (numberOfAssets < 2) {
@@ -272,6 +293,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
+    /// @dev Reverts when `dataFeed` is zero or staleness is zero.
     function _checkOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private pure {
         if (dataFeed == address(0)) {
             revert ZeroAddress();
@@ -282,6 +304,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
+    /// @dev Writes oracle fields and re-caches `feedDecimals`.
     function _setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private {
         Asset storage asset = _assets[token];
 
@@ -292,6 +315,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         emit OracleConfigSet(token, dataFeed, maxPriceStaleness);
     }
 
+    /// @dev Per-asset weight validation. Target in (0, MAX_BPS], tolerance strictly below target.
     function _checkAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private pure {
         if (targetWeightBps == 0 || targetWeightBps > MAX_BPS) {
             revert InvalidWeightBps(token);
@@ -302,6 +326,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
+    /// @dev Writes target and tolerance.
     function _setAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private {
         Asset storage asset = _assets[token];
 
@@ -323,6 +348,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
+    /// @dev Math: amount[i] = mulDiv(shares, balance[i], totalSupply, rounding).
     function _toAssets(uint256 shares, Math.Rounding rounding) private view returns (AssetBalance[] memory assetBalances) {
         uint256 numberOfAssets = _tokenSet.length();
         assetBalances = new AssetBalance[](numberOfAssets);
@@ -337,6 +363,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
+    /// @dev Computes USD values for every token (using candidate balances for token0/token1
+    /// and live balances for the rest), then checks each weight is within tolerance.
     function _previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
         private
         view
@@ -401,6 +429,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         return true;
     }
 
+    /// @dev USD value of `balance`, normalized to 18 decimals.
     function _snapshotUsdValue(address token, Asset memory asset, uint256 balance) private view returns (uint256 value) {
         uint256 priceInUsd = _readPriceInUsd(token, asset);
 
@@ -408,6 +437,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         value = Math.mulDiv(balance, priceInUsd, tokenUnit);
     }
 
+    /// @dev Reads Chainlink price, checks freshness, and normalizes to 18 decimals.
     function _readPriceInUsd(address token, Asset memory asset) private view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(asset.dataFeed).latestRoundData();
 

@@ -21,6 +21,11 @@ import {IIndex} from "./interfaces/IIndex.sol";
 import {SimulationMath} from "./libraries/SimulationMath.sol";
 import {ZeroAddress} from "./utils/CommonErrors.sol";
 
+/// @title DriftwoodHook
+/// @notice Uniswap v4 hook that wraps each swap with a JIT liquidity cycle backed by
+/// the Index assets. Before the swap it borrows assets and adds a single-tick position;
+/// after the swap it removes liquidity, returns everything to the index, and asserts
+/// portfolio weights stay within tolerance.
 contract DriftwoodHook is IDriftwoodHook, BaseHook {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -30,6 +35,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
     mapping(PoolId poolId => ActivePosition activePosition) private _activePositions;
     address private _index;
 
+    /// @param _poolManager Uniswap v4 PoolManager.
+    /// @param index Backing Index contract.
     constructor(IPoolManager _poolManager, address index) BaseHook(_poolManager) {
         if (index == address(0)) {
             revert ZeroAddress();
@@ -40,6 +47,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
     // region - Hook -
 
+    /// @dev Simulates the swap, runs capacity and weight checks, and opens a JIT position
+    /// if both pass. Skips silently (no swap revert) when any check fails.
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         override
@@ -70,6 +79,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /// @dev Closes the JIT position if one was opened in `_beforeSwap`.
     function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         override
@@ -87,6 +97,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
     // region - View functions -
 
+    /// @notice Hook flags: `beforeSwap` and `afterSwap` are active.
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
@@ -106,6 +117,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         });
     }
 
+    /// @inheritdoc IDriftwoodHook
     function getActivePosition(PoolId poolId) external view returns (ActivePosition memory) {
         return _activePositions[poolId];
     }
@@ -114,6 +126,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
 
     // region - Internal functions -
 
+    /// @dev Collects pool state and index balances, picks a tick range, and computes
+    /// the liquidity the hook can add. Returns `hookLiquidity == 0` when JIT is impossible.
     function _prepareSimulation(PoolKey calldata key, SwapParams calldata params)
         private
         view
@@ -156,6 +170,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         context.totalLiquidity = poolLiquidity + context.hookLiquidity;
     }
 
+    /// @dev Makes sure the pool will hold enough tokens.
     function _poolHasCapacityForTake(
         address token0,
         address token1,
@@ -170,6 +185,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         return predictedReturn0 <= available0 && predictedReturn1 <= available1;
     }
 
+    /// @dev Borrows from the index, adds liquidity to the pool, and records the position.
+    /// Skips when one side of the index balance is zero.
     function _openJitPosition(
         PoolKey calldata key,
         SimulationContext memory context,
@@ -208,6 +225,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         _settle(key.currency1, delta.amount1());
     }
 
+    /// @dev Removes liquidity, returns all token balances back to the index, and asserts
+    /// the resulting portfolio weights via `IIndex.collectAssets`.
     function _closeJitPosition(PoolKey calldata key, ActivePosition memory pos) private {
         // Remove liquidity from the pool
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
@@ -235,7 +254,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         IIndex(_index).collectAssets();
     }
 
-    /// @dev Settle a negative delta (transfer tokens to pool manager)
+    /// @dev Settle a negative delta (transfer tokens to pool manager).
     function _settle(Currency currency, int128 delta) private {
         if (delta >= 0) {
             return;
@@ -245,7 +264,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         CurrencySettler.settle(currency, poolManager, address(this), amount, false);
     }
 
-    /// @dev Take a positive delta (receive tokens from pool manager)
+    /// @dev Take a positive delta (receive tokens from pool manager).
     function _take(Currency currency, int128 delta) private {
         if (delta <= 0) {
             return;

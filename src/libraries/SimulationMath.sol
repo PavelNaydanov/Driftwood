@@ -9,6 +9,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {SimulationContext} from "../interfaces/IDriftwoodHook.sol";
 
+/// @title SimulationMath
+/// @notice Pure math used by `DriftwoodHook` to plan a JIT cycle: pick a tick range,
+/// convert liquidity to token amounts, and predict the hook balances after the swap.
 library SimulationMath {
     /// @dev Compute single-cell tick range covering `currentTick`. For `zeroForOne`
     /// on the lower boundary the range is shifted one cell down so `SwapMath` can move price.
