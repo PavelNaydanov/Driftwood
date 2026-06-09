@@ -69,7 +69,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             AssetBalance memory assetBalance = assetBalances[i];
 
             if (assetBalance.amount != 0) {
-                SafeERC20.safeTransferFrom(IERC20(assetBalance.token), msg.sender, address(this), assetBalance.amount);
+                IERC20(assetBalance.token).safeTransferFrom(msg.sender, address(this), assetBalance.amount);
             }
         }
 
@@ -101,7 +101,7 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             }
 
             if (assetBalance.amount != 0) {
-                SafeERC20.safeTransfer(IERC20(assetBalance.token), receiver, assetBalance.amount);
+                IERC20(assetBalance.token).safeTransfer(receiver, assetBalance.amount);
             }
         }
     }
