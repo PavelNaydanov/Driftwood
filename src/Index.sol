@@ -184,9 +184,13 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     function _setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private {
-        _assets[token].dataFeed = dataFeed;
-        _assets[token].feedDecimals = AggregatorV3Interface(dataFeed).decimals();
-        _assets[token].maxPriceStaleness = maxPriceStaleness;
+        Asset storage asset = _assets[token];
+
+        asset.dataFeed = dataFeed;
+        asset.feedDecimals = AggregatorV3Interface(dataFeed).decimals();
+        asset.maxPriceStaleness = maxPriceStaleness;
+
+        _assets[token] = asset;
 
         emit OracleConfigSet(token, dataFeed, maxPriceStaleness);
     }
@@ -227,8 +231,12 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     function _setAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private {
-        _assets[token].targetWeightBps = targetWeightBps;
-        _assets[token].toleranceBps = toleranceBps;
+        Asset storage asset = _assets[token];
+
+        asset.targetWeightBps = targetWeightBps;
+        asset.toleranceBps = toleranceBps;
+
+        _assets[token] = asset;
 
         emit AssetWeightSet(token, targetWeightBps, toleranceBps);
     }
