@@ -190,8 +190,6 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         asset.feedDecimals = AggregatorV3Interface(dataFeed).decimals();
         asset.maxPriceStaleness = maxPriceStaleness;
 
-        _assets[token] = asset;
-
         emit OracleConfigSet(token, dataFeed, maxPriceStaleness);
     }
 
@@ -235,8 +233,6 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         asset.targetWeightBps = targetWeightBps;
         asset.toleranceBps = toleranceBps;
-
-        _assets[token] = asset;
 
         emit AssetWeightSet(token, targetWeightBps, toleranceBps);
     }
@@ -287,21 +283,13 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             totalWeightBps += config.targetWeightBps;
 
             _tokenSet.add(config.token);
-            _assets[config.token] = Asset({
-                dataFeed: config.dataFeed,
-                feedDecimals: AggregatorV3Interface(config.dataFeed).decimals(),
-                tokenDecimals: IERC20Metadata(config.token).decimals(),
-                maxPriceStaleness: config.maxPriceStaleness,
-                targetWeightBps: config.targetWeightBps,
-                toleranceBps: config.toleranceBps
-            });
+            _assets[config.token].tokenDecimals = IERC20Metadata(config.token).decimals();
+            _setOracleConfig(config.token, config.dataFeed, config.maxPriceStaleness);
+            _setAssetWeight(config.token, config.targetWeightBps, config.toleranceBps);
 
             if (IERC20(config.token).balanceOf(address(this)) != config.amount) {
                 revert InvalidAssetAmount(config.token, config.amount);
             }
-
-            emit OracleConfigSet(config.token, config.dataFeed, config.maxPriceStaleness);
-            emit AssetWeightSet(config.token, config.targetWeightBps, config.toleranceBps);
         }
 
         if (totalWeightBps != MAX_BPS) {
