@@ -11,17 +11,14 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
-import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
-import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {CurrencySettler} from "@openzeppelin/uniswap-hooks/src/utils/CurrencySettler.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IDriftwoodHook, ActivePosition, SimulationContext} from "./interfaces/IDriftwoodHook.sol";
 import {IIndex} from "./interfaces/IIndex.sol";
+import {SimulationMath} from "./libraries/SimulationMath.sol";
 import {ZeroAddress} from "./utils/CommonErrors.sol";
 
 contract DriftwoodHook is IDriftwoodHook, BaseHook {
@@ -41,28 +38,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         _index = index;
     }
 
-    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
-        return Hooks.Permissions({
-            beforeInitialize: false,
-            afterInitialize: false,
-            beforeAddLiquidity: false,
-            afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: true,
-            beforeDonate: false,
-            afterDonate: false,
-            beforeSwapReturnDelta: false,
-            afterSwapReturnDelta: false,
-            afterAddLiquidityReturnDelta: false,
-            afterRemoveLiquidityReturnDelta: false
-        });
-    }
-
-    function getActivePosition(PoolId poolId) external view returns (ActivePosition memory) {
-        return _activePositions[poolId];
-    }
+    // region - Hook -
 
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
@@ -75,7 +51,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 
-        (uint256 predictedReturn0, uint256 predictedReturn1) = _simulateHookBalances(context, key.fee, params);
+        (uint256 predictedReturn0, uint256 predictedReturn1) =
+            SimulationMath.simulateHookBalances(context, key.fee, params);
 
         // Ensure the pool will physically have enough balance to settle our take
         // in afterSwap. At take time the pool holds (poolBalance + balance_i), since
@@ -106,6 +83,37 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         return (BaseHook.afterSwap.selector, 0);
     }
 
+    // endregion
+
+    // region - View functions -
+
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
+        return Hooks.Permissions({
+            beforeInitialize: false,
+            afterInitialize: false,
+            beforeAddLiquidity: false,
+            afterAddLiquidity: false,
+            beforeRemoveLiquidity: false,
+            afterRemoveLiquidity: false,
+            beforeSwap: true,
+            afterSwap: true,
+            beforeDonate: false,
+            afterDonate: false,
+            beforeSwapReturnDelta: false,
+            afterSwapReturnDelta: false,
+            afterAddLiquidityReturnDelta: false,
+            afterRemoveLiquidityReturnDelta: false
+        });
+    }
+
+    function getActivePosition(PoolId poolId) external view returns (ActivePosition memory) {
+        return _activePositions[poolId];
+    }
+
+    // endregion
+
+    // region - Internal functions -
+
     function _prepareSimulation(PoolKey calldata key, SwapParams calldata params)
         private
         view
@@ -118,15 +126,8 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
 
-        int24 tickLower = TickBitmap.compress(currentTick, key.tickSpacing) * key.tickSpacing;
-        // Edge case: currentTick sits exactly on the lower grid boundary.
-        // For zeroForOne (price moves down) this range yields sqrtPriceTarget == sqrtPriceCurrent
-        // so SwapMath cannot move the price and JIT is useless.
-        // Shift the range one cell down so the current price ends up at the upper boundary.
-        if (params.zeroForOne && currentTick == tickLower) {
-            tickLower -= key.tickSpacing;
-        }
-        int24 tickUpper = tickLower + key.tickSpacing;
+        (int24 tickLower, int24 tickUpper) =
+            SimulationMath.resolveTickRange(currentTick, key.tickSpacing, params.zeroForOne);
 
         context.token0 = token0;
         context.token1 = token1;
@@ -146,7 +147,7 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
             return (context, balance0, balance1);
         }
 
-        (uint256 deposit0, uint256 deposit1) = _getAmountsForLiquidity(
+        (uint256 deposit0, uint256 deposit1) = SimulationMath.getAmountsForLiquidity(
             context.sqrtPriceX96, context.sqrtPriceLowerX96, context.sqrtPriceUpperX96, context.hookLiquidity
         );
 
@@ -167,33 +168,6 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         uint256 available1 = IERC20(token1).balanceOf(address(poolManager)) + balance1;
 
         return predictedReturn0 <= available0 && predictedReturn1 <= available1;
-    }
-
-    function _simulateHookBalances(SimulationContext memory context, uint24 fee, SwapParams calldata params)
-        private
-        pure
-        returns (uint256 predictedReturn0, uint256 predictedReturn1)
-    {
-        uint160 sqrtPriceTargetX96 = params.zeroForOne
-            ? (params.sqrtPriceLimitX96 > context.sqrtPriceLowerX96
-                    ? params.sqrtPriceLimitX96
-                    : context.sqrtPriceLowerX96)
-            : (params.sqrtPriceLimitX96 < context.sqrtPriceUpperX96
-                    ? params.sqrtPriceLimitX96
-                    : context.sqrtPriceUpperX96);
-
-        (uint160 sqrtPriceNextX96,,, uint256 feeAmount) = SwapMath.computeSwapStep(
-            context.sqrtPriceX96, sqrtPriceTargetX96, context.totalLiquidity, params.amountSpecified, fee
-        );
-
-        (uint256 withdraw0, uint256 withdraw1) = _getAmountsForLiquidity(
-            sqrtPriceNextX96, context.sqrtPriceLowerX96, context.sqrtPriceUpperX96, context.hookLiquidity
-        );
-
-        uint256 hookFeeShare = Math.mulDiv(feeAmount, context.hookLiquidity, context.totalLiquidity);
-
-        predictedReturn0 = context.unused0 + withdraw0 + (params.zeroForOne ? hookFeeShare : 0);
-        predictedReturn1 = context.unused1 + withdraw1 + (params.zeroForOne ? 0 : hookFeeShare);
     }
 
     function _openJitPosition(
@@ -261,23 +235,6 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         IIndex(_index).collectAssets();
     }
 
-    /// @dev Mirrors v4-core LiquidityAmounts.getAmountsForLiquidity
-    function _getAmountsForLiquidity(
-        uint160 sqrtPriceX96,
-        uint160 sqrtPriceLowerX96,
-        uint160 sqrtPriceUpperX96,
-        uint128 liquidity
-    ) private pure returns (uint256 amount0, uint256 amount1) {
-        if (sqrtPriceX96 <= sqrtPriceLowerX96) {
-            amount0 = SqrtPriceMath.getAmount0Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, false);
-        } else if (sqrtPriceX96 < sqrtPriceUpperX96) {
-            amount0 = SqrtPriceMath.getAmount0Delta(sqrtPriceX96, sqrtPriceUpperX96, liquidity, false);
-            amount1 = SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceX96, liquidity, false);
-        } else {
-            amount1 = SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceUpperX96, liquidity, false);
-        }
-    }
-
     /// @dev Settle a negative delta (transfer tokens to pool manager)
     function _settle(Currency currency, int128 delta) private {
         if (delta >= 0) {
@@ -297,4 +254,6 @@ contract DriftwoodHook is IDriftwoodHook, BaseHook {
         uint256 amount = SafeCast.toUint256(int256(delta));
         CurrencySettler.take(currency, poolManager, address(this), amount, false);
     }
+
+    // endregion
 }

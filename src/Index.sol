@@ -55,6 +55,8 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         _mint(defaultAdmin, initialShares);
     }
 
+    // region - User functions -
+
     function mint(uint256 shares, address receiver) external whenJitInactive {
         if (shares == 0) {
             revert ZeroAmount();
@@ -105,6 +107,10 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
             }
         }
     }
+
+    // endregion
+
+    // region - Hook functions -
 
     function lendAssets(address token0, uint256 amount0, address token1, uint256 amount1) external onlyRole(HOOK_ROLE) whenJitInactive {
         if (!_tokenSet.contains(token0)) {
@@ -158,21 +164,9 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         emit AssetsCollected(msg.sender, token0, balance0, token1, balance1);
     }
 
-    function getTokens() external view returns (address[] memory) {
-        return _tokenSet.values();
-    }
+    // endregion
 
-    function getAsset(address token) external view returns (Asset memory) {
-        return _assets[token];
-    }
-
-    function getJitDebt() external view returns (JitDebt memory) {
-        return _jitDebt;
-    }
-
-    function toAssets(uint256 shares, Math.Rounding rounding) external view returns (AssetBalance[] memory assetBalances) {
-        return _toAssets(shares, rounding);
-    }
+    // region - Admin functions -
 
     function setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) external onlyRole(DEFAULT_ADMIN_ROLE) whenJitInactive {
         if (!_tokenSet.contains(token)) {
@@ -181,26 +175,6 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         _checkOracleConfig(token, dataFeed, maxPriceStaleness);
         _setOracleConfig(token, dataFeed, maxPriceStaleness);
-    }
-
-    function _setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private {
-        Asset storage asset = _assets[token];
-
-        asset.dataFeed = dataFeed;
-        asset.feedDecimals = AggregatorV3Interface(dataFeed).decimals();
-        asset.maxPriceStaleness = maxPriceStaleness;
-
-        emit OracleConfigSet(token, dataFeed, maxPriceStaleness);
-    }
-
-    function _checkOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private pure {
-        if (dataFeed == address(0)) {
-            revert ZeroAddress();
-        }
-
-        if (maxPriceStaleness == 0) {
-            revert InvalidMaxPriceStaleness(token);
-        }
     }
 
     /// @dev Caller responsible for no duplicates; if violated, sum invariant can drift
@@ -228,36 +202,37 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
-    function _setAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private {
-        Asset storage asset = _assets[token];
+    // endregion
 
-        asset.targetWeightBps = targetWeightBps;
-        asset.toleranceBps = toleranceBps;
+    // region - View functions -
 
-        emit AssetWeightSet(token, targetWeightBps, toleranceBps);
+    function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
+        external
+        view
+        returns (bool)
+    {
+        return _previewBoundsCheck(token0, newBalance0, token1, newBalance1);
     }
 
-    function _checkAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private pure {
-        if (targetWeightBps == 0 || targetWeightBps > MAX_BPS) {
-            revert InvalidWeightBps(token);
-        }
-
-        if (toleranceBps >= targetWeightBps) {
-            revert InvalidToleranceBps(token);
-        }
+    function getTokens() external view returns (address[] memory) {
+        return _tokenSet.values();
     }
 
-    function _checkJitActive() private view {
-        if (_jitDebt.hook == address(0)) {
-            revert JitIsNotActive();
-        }
+    function getAsset(address token) external view returns (Asset memory) {
+        return _assets[token];
     }
 
-    function _checkJitInactive() private view {
-        if (_jitDebt.hook != address(0)) {
-            revert JitIsActive();
-        }
+    function getJitDebt() external view returns (JitDebt memory) {
+        return _jitDebt;
     }
+
+    function toAssets(uint256 shares, Math.Rounding rounding) external view returns (AssetBalance[] memory assetBalances) {
+        return _toAssets(shares, rounding);
+    }
+
+    // endregion
+
+    // region - Internal functions -
 
     function _initAssets(AssetConfig[] memory assetConfigs) private {
         uint256 numberOfAssets = assetConfigs.length;
@@ -297,6 +272,57 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
         }
     }
 
+    function _checkOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private pure {
+        if (dataFeed == address(0)) {
+            revert ZeroAddress();
+        }
+
+        if (maxPriceStaleness == 0) {
+            revert InvalidMaxPriceStaleness(token);
+        }
+    }
+
+    function _setOracleConfig(address token, address dataFeed, uint32 maxPriceStaleness) private {
+        Asset storage asset = _assets[token];
+
+        asset.dataFeed = dataFeed;
+        asset.feedDecimals = AggregatorV3Interface(dataFeed).decimals();
+        asset.maxPriceStaleness = maxPriceStaleness;
+
+        emit OracleConfigSet(token, dataFeed, maxPriceStaleness);
+    }
+
+    function _checkAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private pure {
+        if (targetWeightBps == 0 || targetWeightBps > MAX_BPS) {
+            revert InvalidWeightBps(token);
+        }
+
+        if (toleranceBps >= targetWeightBps) {
+            revert InvalidToleranceBps(token);
+        }
+    }
+
+    function _setAssetWeight(address token, uint16 targetWeightBps, uint16 toleranceBps) private {
+        Asset storage asset = _assets[token];
+
+        asset.targetWeightBps = targetWeightBps;
+        asset.toleranceBps = toleranceBps;
+
+        emit AssetWeightSet(token, targetWeightBps, toleranceBps);
+    }
+
+    function _checkJitActive() private view {
+        if (_jitDebt.hook == address(0)) {
+            revert JitIsNotActive();
+        }
+    }
+
+    function _checkJitInactive() private view {
+        if (_jitDebt.hook != address(0)) {
+            revert JitIsActive();
+        }
+    }
+
     function _toAssets(uint256 shares, Math.Rounding rounding) private view returns (AssetBalance[] memory assetBalances) {
         uint256 numberOfAssets = _tokenSet.length();
         assetBalances = new AssetBalance[](numberOfAssets);
@@ -309,14 +335,6 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
                 amount: Math.mulDiv(shares, IERC20(token).balanceOf(address(this)), totalSupply(), rounding)
             });
         }
-    }
-
-    function previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
-        external
-        view
-        returns (bool)
-    {
-        return _previewBoundsCheck(token0, newBalance0, token1, newBalance1);
     }
 
     function _previewBoundsCheck(address token0, uint256 newBalance0, address token1, uint256 newBalance1)
@@ -411,4 +429,6 @@ contract Index is IIndex, ERC20Upgradeable, AccessControlUpgradeable {
 
         return price;
     }
+
+    // endregion
 }
