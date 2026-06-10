@@ -1,0 +1,53 @@
+<svg width="600" height="700" viewBox="0 0 600 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Driftwood">
+  <defs>
+    <linearGradient id="navy" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#16335f"/>
+      <stop offset="0.6" stop-color="#1c5f7e"/>
+      <stop offset="1" stop-color="#1f9079"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c7088"/>
+      <stop offset="1" stop-color="#23a585"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0.2">
+      <stop offset="0"    stop-color="#a9763f"/>
+      <stop offset="0.45" stop-color="#d8b07a"/>
+      <stop offset="0.7"  stop-color="#c79a5f"/>
+      <stop offset="1"    stop-color="#b3853f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ring: bottom-left teal ribbon -->
+  <path d="M 354.1 451.4 A 175 175 0 0 1 135.6 225.1"
+        fill="none" stroke="url(#teal)" stroke-width="40" stroke-linecap="round"/>
+  <!-- ring: top + right navy ribbon -->
+  <path d="M 135.6 225.1 A 175 175 0 1 1 354.1 451.4"
+        fill="none" stroke="url(#navy)" stroke-width="40" stroke-linecap="round"/>
+
+  <!-- inner green wave swoosh -->
+  <path d="M 218 212 C 305 210 351 268 322 352 C 334 278 288 244 214 250 Z"
+        fill="url(#teal)"/>
+  <!-- small inner crescent (echo of the current) -->
+  <path d="M 198 358 C 244 346 276 372 314 358"
+        fill="none" stroke="#23a585" stroke-width="7" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- driftwood branch (hero, crosses the ring) -->
+  <path d="M 110 300
+           C 176 285 236 292 300 296
+           C 362 300 416 289 486 283
+           C 470 296 452 301 432 301
+           C 362 306 322 312 300 312
+           C 236 314 176 319 110 312 Z"
+        fill="url(#wood)"/>
+  <!-- small fork near the right tip -->
+  <path d="M 420 291 C 446 286 461 277 480 264 C 467 281 453 290 433 297 Z"
+        fill="url(#wood)"/>
+  <!-- grain lines -->
+  <path d="M 150 304 C 240 298 330 309 472 290" fill="none" stroke="#8f6234" stroke-width="2.2" stroke-linecap="round" opacity="0.55"/>
+  <path d="M 165 309 C 250 305 332 312 430 300" fill="none" stroke="#8f6234" stroke-width="1.6" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- wordmark -->
+  <text x="300" y="635" text-anchor="middle"
+        font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="96" font-weight="700" letter-spacing="0.5" fill="#16335f">Driftwood</text>
+</svg>

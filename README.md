@@ -1,4 +1,6 @@
-# Driftwood
+<p align="center">
+  <img src="./images/driftwood-logo.svg" alt="Driftwood" width="350" />
+</p>
 
 **A Uniswap v4 hook that turns index portfolio rebalancing (like [Reserve protocol](https://reserve.org/)) into LP yield.**
 
