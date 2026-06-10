@@ -30,13 +30,19 @@ An index's weights constantly "drift" away from target under market pressure. Dr
 
 ## How it works
 
-Three contracts:
+![Driftwood hook architecture — contracts and actors in one JIT cycle](./images/driftwood-hook-architecture.png)
 
-- **[Index](src/Index.sol)** — the index fund. Holds a basket of tokens at target weights (`targetWeightBps`) with a tolerance (`toleranceBps`), reads prices through Chainlink oracles, lends its reserves to the hook, and checks that the weights stay within bounds after a swap.
-- **[DriftwoodHook](src/DriftwoodHook.sol)** — the Uniswap v4 hook. In `beforeSwap` it simulates the swap outcome, and if the weights stay within tolerance it borrows the index's reserves and deploys them as JIT liquidity. In `afterSwap` it closes the position and returns the tokens to the index together with its share of the fee.
-- **[IndexFactory](src/IndexFactory.sol)** — a factory that deploys indexes through minimal proxies (clones).
+Three contracts, a Uniswap v4 pool, and the external actors above:
+
+- **[Index](src/Index.sol)** — the index fund. Holds the basket at target weights (`targetWeightBps`) within a tolerance (`toleranceBps`), prices it through Chainlink, lends its reserves to the hook, and enforces the bounds after each swap. Depositors enter via `mint` and exit via `redeem`.
+- **[DriftwoodHook](src/DriftwoodHook.sol)** — the Uniswap v4 hook that runs the JIT cycle: in `beforeSwap` it borrows the index's reserves and deploys them as just-in-time liquidity for the swap; in `afterSwap` it pulls them back together with its share of the fee.
+- **[IndexFactory](src/IndexFactory.sol)** — deploys indexes as minimal proxies (clones).
+
+Each swap drives one cycle. If the resulting weights (priced via Chainlink) stay within tolerance, the hook lends the reserves and adds them as liquidity, then returns them with the fee — more than it lent, which grows the share value. If the swap is too large or would push the weights out of tolerance, the JIT is skipped and the trade routes through the pool's native liquidity instead. The JIT is optional and never reverts the user's swap.
 
 ### Swap flow
+
+A step-by-step map of the contract calls during a single swap, including the checks that decide between the JIT path and the native-liquidity fallback.
 
 ```
 Trader → Pool ──► DriftwoodHook.beforeSwap
@@ -69,8 +75,6 @@ Trader → Pool ──► DriftwoodHook.beforeSwap
         within tolerance    out of bounds
         [JIT succeeded]     [revert WeightOutOfBounds]
 ```
-
-If at any check step the JIT is not profitable or not safe (a huge swap, weights drifting out of tolerance), the hook simply skips the JIT and the swap goes through the pool's native liquidity. The user's swap is not reverted because of tolerance — the JIT is optional.
 
 ## Yield and the holder lifecycle
 
