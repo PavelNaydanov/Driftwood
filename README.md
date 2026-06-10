@@ -2,15 +2,24 @@
   <img src="./images/driftwood-logo.svg" alt="Driftwood" width="350" />
 </p>
 
-**A Uniswap v4 hook that turns index portfolio rebalancing (like [Reserve protocol](https://reserve.org/)) into LP yield.**
+<h3 align="center">A Uniswap v4 hook that turns index portfolio rebalancing into LP yield.</h3>
 
-> Driftwood is the LP position whose impermanent loss is the rebalancing target.
+<p align="center">
+  <i>Driftwood is the LP position whose impermanent loss is the rebalancing target.</i>
+</p>
 
-*Built for the Atrium × Uniswap incubator hackathon, track "Impermanent Loss and Yield Systems".*
+<p align="center">
+  <a href="https://v4.uniswap.org/"><img src="https://img.shields.io/badge/Uniswap-v4_hook-FF007A?logo=uniswap&logoColor=white" alt="Uniswap v4 hook" /></a>
+  <a href="https://www.soliditylang.org/"><img src="https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity&logoColor=white" alt="Solidity" /></a>
+  <a href="https://www.getfoundry.sh/"><img src="https://img.shields.io/badge/built_with-Foundry-orange" alt="Foundry" /></a>
+  <a href="https://reserve.org/"><img src="https://img.shields.io/badge/inspired_by-Reserve-2150E3" alt="Reserve protocol" /></a>
+</p>
+
+<p align="center">
+  <sub>Built for the Atrium × Uniswap Hook Incubator · Track <i>"Impermanent Loss and Yield Systems"</i></sub>
+</p>
 
 ## The core idea
-
-Driftwood turns index portfolio rebalancing into a source of LP yield.
 
 Index protocols hold baskets of tokens at target weights, and pay to rebalance them when the weights drift — through auctions, MEV-prone swaps, or third-party market makers. Meanwhile the underlying reserves sit idle. Driftwood is a Uniswap v4 hook that deploys these reserves as concentrated liquidity, collects swap fees, and lets organic trading flow do the rebalancing work.
 
